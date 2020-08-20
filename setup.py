@@ -59,8 +59,7 @@ setup(
 
     install_requires=['matplotlib', 
                       'ete3>=3', 
-                      'math', 
-                      'biopython', 
+                      'biopython>=1.77', 
                       'pylab', 
                       'argparse'],  # Optional
     project_urls={  # Optional
