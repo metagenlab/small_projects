@@ -14,16 +14,16 @@ with open(path.join(here, 'README.rst'), encoding='utf-8') as f:
     long_description = f.read()
 
 setup(
-    name='metagenlab_libs',  # Required
+    name='metagenlab_libs',
 
-    version='1.0',  # Required
-    description='Various utilities to generate circos plots, ete3 plots, jvenn plots',  # Optional
-    long_description=long_description,  # Optional
-    long_description_content_type='text/markdown',  # Optional (see note above)
-    url='https://github.com/metagenlab/metagenlab_libs',  # Optional
-    author='MetaGenLab',  # Optional
-    author_email='trestan.pillonel@gmail.com',  # Optional
-    classifiers=[  # Optional
+    version='1.0',
+    description='Various utilities to generate circos plots, ete3 plots, jvenn plots',
+    long_description=long_description,
+    long_description_content_type='text/markdown',
+    url='https://github.com/metagenlab/metagenlab_libs',
+    author='MetaGenLab',
+    author_email='trestan.pillonel@gmail.com',
+    classifiers=[
         # How mature is this project? Common values are
         #   3 - Alpha
         #   4 - Beta
@@ -43,7 +43,7 @@ setup(
         'Programming Language :: Python :: 3.7',
     ],
 
-    keywords='bacteria genome circos ete3 jvenn',  # Optional
+    keywords='bacteria genome circos ete3 jvenn',
 
     # You can just specify package directories manually here if your project is
     # simple. Or you can use find_packages().
@@ -54,15 +54,16 @@ setup(
     #
     #   py_modules=["my_module"],
     #
-    packages=find_packages(exclude=['contrib', 'docs', 'tests']),  # Required
+    packages=find_packages(exclude=['contrib', 'docs', 'tests']),
     python_requires='>=3.0',
 
     install_requires=['matplotlib', 
                       'ete3>=3', 
                       'biopython>=1.77', 
                       'argparse',
-                      'PyQt5'],  # Optional
-    project_urls={  # Optional
+                      'PyQt5'],
+    
+    project_urls={
         'Bug Reports': 'https://github.com/metagenlab/metagenlab_libs/issues',
         'Source': 'https://github.com/metagenlab/metagenlab_libs',
     },
