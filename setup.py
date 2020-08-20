@@ -60,7 +60,8 @@ setup(
     install_requires=['matplotlib', 
                       'ete3>=3', 
                       'biopython>=1.77', 
-                      'argparse'],  # Optional
+                      'argparse',
+                      'pyqt'],  # Optional
     project_urls={  # Optional
         'Bug Reports': 'https://github.com/metagenlab/metagenlab_libs/issues',
         'Source': 'https://github.com/metagenlab/metagenlab_libs',
