@@ -438,7 +438,7 @@ def print_circos_GC_file(record_list,
                          out_directory="",
                          outname=False):
 
-    import GC
+    from metagenlab_utils import GC
     import os
 
     if not outname:
@@ -727,7 +727,7 @@ class Circos_config:
 
 
 def get_circos_GC_config_files(biodatabase_name, accession_list):
-    from chlamdb.plots import GC
+    from metagenlab_utils import GC
     '''
     accessions: in case of several chromosomes or combinations of chromosomes
 
