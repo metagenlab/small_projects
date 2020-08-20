@@ -57,7 +57,7 @@ setup(
     packages=find_packages(exclude=['contrib', 'docs', 'tests']),  # Required
     python_requires='>=3.0',
 
-    install_requires=['matplotlib', 'ete3', 'math', 'biopython', 'pylab', 'argparse'],  # Optional
+    install_requires=['matplotlib', 'ete3=3.1.1', 'math', 'biopython', 'pylab', 'argparse'],  # Optional
     project_urls={  # Optional
         'Bug Reports': 'https://github.com/metagenlab/metagenlab_libs/issues',
         'Source': 'https://github.com/metagenlab/metagenlab_libs',
