@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-from django.conf import settings
+from VFapp import settings
 import os
 import sys
 import pandas
@@ -20,11 +20,12 @@ class DB:
     def __init__(self, conn, cursor):
         self.server = cursor
         self.conn = conn
-        self.db_name = settings.DB_NAME
+        self.db_path = settings.DB_PATH
 
     def load_db():
 
-        db = settings.DB_NAME
+        db = settings.DB_PATH
+        print("connecting to ", db)
         conn = sqlite3.connect(db)
         cursor = conn.cursor()
         
@@ -41,9 +42,22 @@ class DB:
     
         # convert long table to matrix with pandas
         
-        
-    
-    
+    def create_term_table(self,):
+        sql = 'create table if not exists terms (term_id INTEGER PRIMARY KEY, term_name varchar(200))'
+        self.server.execute(sql,)
+
+
+    def add_term(self,term_name):
+        sql = f'select term_id from terms where term_name="{term_name}"'
+        try:
+            term_id = self.server.execute(sql,).fetchall()[0][0]
+        except IndexError:
+            sql = f'insert into terms (term_name) values ("{term_name}")'
+            self.server.execute(sql,)
+            self.conn.commit()
+            term_id = self.server.lastrowid
+        return term_id
+
     def get_uniparc_entry_annotation(self, uniparc_id_list, add_source_db=True):
         
         uniparc_id_filter = ','.join([str(i) for i in uniparc_id_list])
@@ -179,11 +193,15 @@ class DB:
         return {i[0]:i[1] for i in self.server.execute(sql,).fetchall()}
  
         
-    def get_cluster2frequency_within_species(self,
+    def get_VF_cluster2frequency_within_species(self,
                                              taxon_id, 
                                              min_identity=90, 
                                              min_coverage=60,
                                              percentages=False):
+        '''
+        Work with species and genus taxids
+        '''
+        
         
         if percentages:
             n_genomes = self.get_n_genomes(taxon_id)
@@ -200,7 +218,7 @@ class DB:
             select AA.cluster_name,ifnull(BB.n, 0) from (
                 select distinct cluster_name from uniparc2species t1 
                 inner join uniparc2mmseqs_90_80 t2 on t1.uniparc_id=t2.uniparc_id
-                where t1.species_taxon_id={taxon_id}
+                where (t1.species_taxon_id={taxon_id} or t1.genus_taxon_id={taxon_id})
             ) AA
             left join 
                 (
@@ -210,13 +228,14 @@ class DB:
                     inner join homology_search_db_xrefs t3 on t1.substitution_matrix_id=t3.id
                     inner join homology_search_db_xrefs t4 on t1.filtering_id=t4.id
                     inner join genome_assembly_table t5 on t1.assembly_id=t5.assembly_id
-                    inner join uniparc2mmseqs_90_80 t3 on t1.uniparc_id=t3.uniparc_id
+                    inner join uniparc2mmseqs_90_80 t6 on t1.uniparc_id=t6.uniparc_id
+                    inner join genome_assembly_table2taxon_id t7 on t5.assembly_id=t7.assembly_id
                     where t1.percent_identity>={min_identity}
                     and uniparc_seq_coverage>={min_coverage}
                     and t2.name in ("ssearch", "tfastx") 
                     and t3.name="BL50" 
                     and t4.name="no_filtering_lowcomplexity"
-                    and t5.taxon_id={taxon_id}) B group by cluster_name
+                    and t7.taxon_id={taxon_id}) B group by cluster_name
                 ) BB
             on AA.cluster_name=BB.cluster_name;
         '''
@@ -232,13 +251,33 @@ class DB:
                     hsh[i] = 0
         return hsh
     
-    def get_n_genomes(self, taxon_id):
-        sql = f'select count(*) from genome_assembly_table where taxon_id={taxon_id}'
-        n_genomes = int(self.server.execute(sql,).fetchall()[0][0])
-        return n_genomes
+    def get_n_genomes(self, taxon_id=False):
+        if not taxon_id:
+            sql = f'''select taxon_id,count(*) as n from genome_assembly_table t1
+            inner join genome_assembly_table2taxon_id t2 on t1.assembly_id=t2.assembly_id
+            group by taxon_id
+            '''
+            return {str(i[0]):i[1] for i in self.server.execute(sql,).fetchall()} 
+        else:
+            sql = f'''select count(*) from genome_assembly_table t1
+            inner join genome_assembly_table2taxon_id t2 on t1.assembly_id=t2.assembly_id
+            where taxon_id={taxon_id}'''
+            n_genomes = int(self.server.execute(sql,).fetchall()[0][0])
+            return n_genomes
     
+    def get_assembly_id(self, assembly_accession):
+        sql = f'''select assembly_id from genome_assembly_table
+        where accession="{assembly_accession}"'''
+        print(sql)
+        return self.server.execute(sql,).fetchall()[0][0]
+ 
+    def get_assembly_accession2assembly_id(self, taxon_id):
+        sql = f'''select accession,t1.assembly_id from genome_assembly_table t1
+        inner join genome_assembly_table2taxon_id t2 on t1.assembly_id=t2.assembly_id
+        where taxon_id={taxon_id}'''
+        return {i[0]:i[1] for i in self.server.execute(sql,).fetchall()}
     
-    def get_cluster2frequency_within_species_separated_dbs(self,
+    def get_VF_cluster2frequency_within_species_separated_dbs(self,
                                                            taxon_id, 
                                                            min_identity=90, 
                                                            min_coverage=80,
@@ -264,13 +303,14 @@ class DB:
                 inner join homology_search_db_xrefs t3 on t1.substitution_matrix_id=t3.id
                 inner join homology_search_db_xrefs t4 on t1.filtering_id=t4.id
                 inner join genome_assembly_table t5 on t1.assembly_id=t5.assembly_id
-                inner join uniparc2mmseqs_90_80 t3 on t1.uniparc_id=t3.uniparc_id
+                inner join uniparc2mmseqs_90_80 t6 on t1.uniparc_id=t6.uniparc_id
+                inner join genome_assembly_table2taxon_id t8 on t5.assembly_id=t8.assembly_id
                 where t1.percent_identity>={min_identity}
                 and uniparc_seq_coverage>={min_coverage}
                 and t2.name in ("ssearch", "tfastx") 
                 and t3.name="BL50" 
                 and t4.name="no_filtering_lowcomplexity"
-                and t5.taxon_id={taxon_id}) B group by cluster_name,cluster_id
+                and t8.taxon_id={taxon_id}) B group by cluster_name,cluster_id
                 ) BB
                 on AA.cluster_id=BB.cluster_id
                 inner join uniparc2mmseqs_90_80 CC on AA.cluster_id=CC.cluster_id 
@@ -293,11 +333,23 @@ class DB:
         
         return db2counts
 
+    def get_genome_assembly_id2_n_proteins(self, taxon_id):
+        
+        sql = f'''
+        select t1.assembly_id,count(*) from genome_assembly_table t1 
+        inner join genome_assembly_table2taxon_id t2 on t1.assembly_id=t2.assembly_id
+        inner join circos_genome2proteins t3 on t1.assembly_id=t3.assembly_id 
+        and t2.taxon_id={taxon_id} group by t1.assembly_id;
+        '''
+        
+        return {i[0]:i[1] for i in self.server.execute(sql,).fetchall()}
+
     def get_genome_accession2description(self,
                                          taxon_id):
         
         sql = f'''
-        select accession,description from genome_assembly_table
+        select accession,description from genome_assembly_table t1
+        inner join genome_assembly_table2taxon_id t2 on t1.assembly_id=t2.assembly_id
         where taxon_id={taxon_id}
         '''
         
@@ -309,10 +361,11 @@ class DB:
         
         sql = f'''select accession,count(*) as n from 
         (select t2.accession from homology_search t1 
-        inner join genome_assembly_table t2 on t1.assembly_id=t2.assembly_id 
+        inner join genome_assembly_table t2 on t1.assembly_id=t2.assembly_id
+        inner join genome_assembly_table2taxon_id t3 on t2.assembly_id=t3.assembly_id
         where (alignment_id is not NULL 
         and percent_identity>={min_identity} 
-        and taxon_id={taxon_id})) A 
+        and t3.taxon_id={taxon_id})) A 
         group by accession order by n DESC;
         '''
         
@@ -322,7 +375,10 @@ class DB:
     def get_genome_accession2statistics(self,
                                          taxon_id):
         
-        sql = f'select accession, GC, cumulated_size, n_pseudo  from genome_assembly_table where taxon_id={taxon_id};'
+        sql = f'''select accession, GC, cumulated_size, n_pseudo from genome_assembly_table t1
+        inner join genome_assembly_table2taxon_id t2 on t1.assembly_id=t2.assembly_id
+        where taxon_id={taxon_id};
+        '''
         genome_data = self.server.execute(sql,).fetchall()
         accession2gc = {i[0]:i[1] for i in genome_data}
         accession2genome_size = {i[0]:i[2] for i in genome_data}
@@ -335,12 +391,29 @@ class DB:
                                   taxon_id):
         
         sql = f'''select accession,st from mlst t1 
-             inner join genome_assembly_table t2 on t1.assembly_id=t2.assembly_id 
+             inner join genome_assembly_table t2 on t1.assembly_id=t2.assembly_id
+             inner join genome_assembly_table2taxon_id t3 on t2.assembly_id=t3.assembly_id
              where taxon_id={taxon_id};
           '''
         
         return {i[0]:i[1] for i in self.server.execute(sql,).fetchall()}
-
+    
+    def get_genome_accession2ani(self,
+                                 taxon_id,
+                                 reference_assembly_accession):
+        
+        sql = f'''select t3.accession,ani from ani t1 
+        inner join genome_assembly_table t2 on t1.ref_assembly_id=t2.assembly_id 
+        inner join genome_assembly_table t3 on t1.query_assembly_id=t3.assembly_id
+        inner join genome_assembly_table2taxon_id t4 on t1.ref_assembly_id=t4.assembly_id
+        inner join genome_assembly_table2taxon_id t5 on t1.query_assembly_id=t5.assembly_id
+        where t1.taxon_id={taxon_id} 
+        and t2.accession="{reference_assembly_accession}" 
+        and t4.taxon_id={taxon_id}
+        and t5.taxon_id={taxon_id};
+          '''
+        #print(sql)
+        return {i[0]:i[1] for i in self.server.execute(sql,).fetchall()}
 
 
     def get_genome_n_VF_clusters(self,
@@ -353,22 +426,32 @@ class DB:
         '''
         
         # get cluster frequency
-        sql = f'''select accession,count(*) from (
-            select distinct t5.accession,t5.description,hit_accession from homology_search t1
+        sql = f'''select A.accession,ifnull(n_VFs, 0) from (
+            select t1.accession,t1.assembly_id from genome_assembly_table t1 
+            inner join genome_assembly_table2taxon_id t2 on t1.assembly_id=t2.assembly_id
+            where t2.taxon_id={taxon_id}
+            ) A
+            left join 
+            (
+            select B.assembly_id,B.accession,count(*) as n_VFs from (            
+            select distinct t5.assembly_id,t5.accession,t5.description,hit_accession from homology_search t1
             inner join homology_search_db_xrefs t2 on t1.search_tool_id=t2.id
             inner join homology_search_db_xrefs t3 on t1.substitution_matrix_id=t3.id
             inner join homology_search_db_xrefs t4 on t1.filtering_id=t4.id
             inner join genome_assembly_table t5 on t1.assembly_id=t5.assembly_id
             inner join uniparc_entry t6 on t1.uniparc_id=t6.uniparc_id
-            where t5.taxon_id={taxon_id}
+            inner join genome_assembly_table2taxon_id t7 on t5.assembly_id=t7.assembly_id
+            where t7.taxon_id={taxon_id}
             and t1.percent_identity>={min_identity}
             and uniparc_seq_coverage>={min_coverage}
             and t2.name in ("ssearch", "tfastx")
             and t3.name="BL50" 
             and t4.name="no_filtering_lowcomplexity"
-            group by t5.accession,t1.hit_accession) A 
-            group by accession;'''
-        
+            group by t5.accession,t1.hit_accession
+            ) B group by B.assembly_id,B.accession) C
+            on A.assembly_id=C.assembly_id
+            ;'''
+        #print(sql)
         return {i[0]:i[1] for i in self.server.execute(sql,).fetchall()}
     
 
@@ -388,13 +471,14 @@ class DB:
 
     def get_species_cluster_accession_list(self,
                                            taxon_id, 
-                                           db_name):
+                                           db_name,
+                                           rank='species'):
         
         sql = f'''
         select distinct cluster_name from (
         select distinct cluster_id from uniparc2species t1
         inner join uniparc2mmseqs_90_80 t2 on t1.uniparc_id=t2.uniparc_id 
-        where t1.species_taxon_id = {taxon_id}) A 
+        where t1.{rank}_taxon_id = {taxon_id}) A 
         inner join uniparc2mmseqs_90_80 B on A.cluster_id=B.cluster_id 
         inner join VF_table C on B.uniparc_id=C.uniparc_id 
         inner join VF_databases D on C.db_id= D.db_id 
@@ -406,13 +490,14 @@ class DB:
 
     def get_db_cluster_id_list(self,
                                taxon_id, 
-                               db_name):
+                               db_name,
+                               rank='species'):
         
         sql = f'''
         select distinct A.cluster_id from (
         select distinct cluster_id from uniparc2species t1
         inner join uniparc2mmseqs_90_80 t2 on t1.uniparc_id=t2.uniparc_id 
-        where t1.species_taxon_id = {taxon_id}) A 
+        where t1.{rank}_taxon_id = {taxon_id}) A 
         inner join uniparc2mmseqs_90_80 B on A.cluster_id=B.cluster_id 
         inner join VF_table C on B.uniparc_id=C.uniparc_id 
         inner join VF_databases D on C.db_id= D.db_id 
@@ -440,7 +525,8 @@ class DB:
                     inner join genome_assembly_table t5 on t1.assembly_id=t5.assembly_id 
                     inner join {CLUSTERING_TABLE} t6 on t1.uniparc_id=t6.uniparc_id 
                     inner join {CLUSTERING2SPECIES_TABLE} t7 on t6.cluster_id=t7.cluster_id
-                    where t5.taxon_id={taxon_id}
+                    inner join genome_assembly_table2taxon_id t8 on t5.assembly_id=t8.assembly_id
+                    where t8.taxon_id={taxon_id}
                     and t7.species_taxon_id={taxon_id}
                     and percent_identity>={min_identity}
                     and uniparc_seq_coverage>={min_coverage}
@@ -459,10 +545,11 @@ class DB:
         return self.server.execute(sql,).fetchall()[0][0]
 
     def get_species_VF_UP_count(self,
-                                taxon_id):
+                                taxon_id,
+                                rank="species"):
         
         sql = f'''select count(*) from (select distinct t1.uniparc_id from {CLUSTERING_TABLE} t1 
-        inner join uniparc2species t2 on t1.uniparc_id=t2.uniparc_id where species_taxon_id={taxon_id}) A;'''
+        inner join uniparc2species t2 on t1.uniparc_id=t2.uniparc_id where {rank}_taxon_id={taxon_id}) A;'''
         
         return self.server.execute(sql,).fetchall()[0][0]
        
@@ -542,20 +629,104 @@ class DB:
         # 
         return pmi2descr
  
-    def get_mmseq_cluster_frequency(self, taxon_id):
+    def get_mmseq_cluster_frequency(self, 
+                                    taxon_id,
+                                    percentage=False):
         
         sql = f'''
         select cluster_id,count(*) as n from (select distinct t1.assembly_id,cluster_id from circos_genome2proteins t1 
-        inner join circos_proteins2mmseqs_80_80 t2 on t1.protein_id=t2.protein_id 
-        inner join genome_assembly_table t3 on t1.assembly_id=t3.assembly_id 
-        where t3.taxon_id={taxon_id}) A group by A.cluster_id;
+        inner join circos_proteins2mmseqs t2 on t1.protein_id=t2.protein_id 
+        inner join genome_assembly_table t3 on t1.assembly_id=t3.assembly_id
+        inner join genome_assembly_table2taxon_id t4 on t3.assembly_id=t4.assembly_id
+        where t4.taxon_id={taxon_id}
+        and t2.id_cutoff=80
+        and t2.cov_cutoff=80
+        ) A group by A.cluster_id;
         '''
+        
+        cluster2count = {i[0]:i[1] for i in self.server.execute(sql,).fetchall()}
  
-        return {i[0]:i[1] for i in self.server.execute(sql,).fetchall()}
-    
+        if percentage:
+            n_genomes = self.get_n_genomes(taxon_id)
+            cluster2count_percent = {}
+            for cluster, count in cluster2count.items():
+                cluster2count_percent[cluster] = (count/float(n_genomes))*100
+            return cluster2count_percent
+        else:
+            return cluster2count
+
+    def get_VF_cluster_hits(self, 
+                            cluster_id,
+                            taxon_id,
+                            search_tool='ssearch',
+                            matrix='BL50',
+                            filtering='no_filtering_lowcomplexity',
+                            identity_cutoff=90,
+                            coverage_cutoff=60):
+        
+        # TODO: add filter on VF taxnonomy
+        sql = f'''select t2.accession as assembly_accession,t1.hit_accession, t5.uniparc_accession,
+                    t1.percent_identity,uniparc_seq_coverage,assembly_seq_coverage, 
+                    t1.evalue, t1.bitscore,t6.description
+                    from homology_search t1
+                    inner join genome_assembly_table t2 on t1.assembly_id=t2.assembly_id
+                    inner join {CLUSTERING_TABLE} t4 on t1.uniparc_id=t4.uniparc_id
+                    inner join uniparc_entry t5 on t1.uniparc_id=t5.uniparc_id
+                    inner join uniparc_consensus_annotation t6 on t1.uniparc_id=t6.uniparc_id
+                    inner join homology_search_db_xrefs t7 on t1.search_tool_id=t7.id
+                    inner join homology_search_db_xrefs t8 on t1.substitution_matrix_id=t8.id
+                    inner join homology_search_db_xrefs t9 on t1.filtering_id=t9.id
+                    inner join genome_assembly_table2taxon_id t10 on t2.assembly_id=t10.assembly_id
+                    inner join mmseqs_90_80_2species t11 on t4.cluster_id=t11.cluster_id 
+                    where t4.cluster_id="{cluster_id}"
+                    and percent_identity>={identity_cutoff}
+                    and uniparc_seq_coverage>={coverage_cutoff} 
+                    and t7.name="{search_tool}" 
+                    and t8.name="{matrix}" 
+                    and t9.name="{filtering}"
+                    and t10.taxon_id={taxon_id}
+                    and (t11.species_taxon_id={taxon_id} or t11.genus_taxon_id={taxon_id})
+                    '''
+
+        return pandas.read_sql(sql, self.conn)
+
+    def get_VF_cluster_best_hits(self, 
+                                 cluster_id,
+                                 taxon_id,
+                                 search_tool='ssearch',
+                                 matrix='BL50',
+                                 filtering='no_filtering_lowcomplexity',
+                                 identity_cutoff=90,
+                                 coverage_cutoff=60):
+
+        all_hits_df = self.get_VF_cluster_hits(cluster_id=cluster_id,
+                                            taxon_id=taxon_id,
+                                            search_tool=search_tool,
+                                            matrix=matrix,
+                                            filtering=filtering,
+                                            identity_cutoff=identity_cutoff,
+                                            coverage_cutoff=identity_cutoff)
+        
+        print("all_hits_df", all_hits_df.head())
+        
+        assembly_accession2best_hit = {}
+        for n, row in all_hits_df.iterrows():
+            if row["assembly_accession"] not in assembly_accession2best_hit:
+                assembly_accession2best_hit[row["assembly_accession"]] = {}
+                assembly_accession2best_hit[row["assembly_accession"]]["hit_accession"] = row["hit_accession"]
+                assembly_accession2best_hit[row["assembly_accession"]]["uniparc_accession"] = row["uniparc_accession"]
+                assembly_accession2best_hit[row["assembly_accession"]]["percent_identity"] = row["percent_identity"]
+                assembly_accession2best_hit[row["assembly_accession"]]["uniparc_seq_coverage"] = row["uniparc_seq_coverage"]
+                assembly_accession2best_hit[row["assembly_accession"]]["assembly_seq_coverage"] = row["assembly_seq_coverage"]
+                assembly_accession2best_hit[row["assembly_accession"]]["evalue"] = row["evalue"]
+                assembly_accession2best_hit[row["assembly_accession"]]["bitscore"] = row["bitscore"]
+                assembly_accession2best_hit[row["assembly_accession"]]["description"] = row["description"]
+
+        return assembly_accession2best_hit
     
     def get_assembly_VF_list(self, assembly_accession, identity_cutoff, taxon_id):
         
+        # TODO: add filter on VF taxnonomy
         sql = f'''select t1.hit_accession, t4.cluster_name, t5.uniparc_accession,
                     t1.percent_identity,uniparc_seq_coverage,assembly_seq_coverage, 
                     t1.evalue, t1.bitscore,t6.description
@@ -567,16 +738,85 @@ class DB:
                     inner join homology_search_db_xrefs t7 on t1.search_tool_id=t7.id
                     inner join homology_search_db_xrefs t8 on t1.substitution_matrix_id=t8.id
                     inner join homology_search_db_xrefs t9 on t1.filtering_id=t9.id
+                    inner join genome_assembly_table2taxon_id t10 on t2.assembly_id=t10.assembly_id
+                    inner join mmseqs_90_80_2species t11 on t4.cluster_id=t11.cluster_id 
                     where accession="{assembly_accession}" 
                     and percent_identity>={identity_cutoff}
                     and uniparc_seq_coverage>=60 
                     and t7.name="ssearch" 
                     and t8.name="BL50" 
                     and t9.name="no_filtering_lowcomplexity"
-                    and t2.taxon_id={taxon_id}
+                    and t10.taxon_id={taxon_id}
+                    and (t11.species_taxon_id={taxon_id} or t11.genus_taxon_id={taxon_id})
                     '''
-                    
+        #print(sql)           
         return pandas.read_sql(sql, self.conn)
+    
+    
+    def get_proportion_core_genes(self,):
+        
+        sql = '''
+        select A.taxon_id,(CAST(A.n_core as FLOAT)/B.proteins)*100 as percentage from 
+        (select taxon_id,assembly_id,value as n_core from assembly_statistics t1 
+        inner join terms t2 on t1.term_id=t2.term_id where term_name="n_core_90") A 
+        inner join (select assembly_id,value as proteins from assembly_statistics t1 
+        inner join terms t2 on t1.term_id=t2.term_id where term_name="n_proteins") B 
+        on A.assembly_id=B.assembly_id;
+        '''
+                    
+        return pandas.read_sql(sql, self.conn)    
+
+    def get_VFs_assembly_stats(self,percentages=False):
+        
+        sql = '''
+        select taxon_id,value as n_core_90 from assembly_statistics t1 
+        inner join terms t2 on t1.term_id=t2.term_id where term_name="n_VF_core_90";
+        '''
+        species_median_N_core = pandas.read_sql(sql, self.conn)
+        #print(species_median_N_core.head())
+        species_median_N_core["n_core_90"] = pandas.to_numeric(species_median_N_core["n_core_90"]) 
+        species_median_N_core["taxon_id"] = species_median_N_core["taxon_id"].astype(str) 
+        taxid2core_VF_median = species_median_N_core.groupby(["taxon_id"]).mean().to_dict()["n_core_90"]
+
+        sql = '''
+        select taxon_id,value as n_pan_90 from assembly_statistics t1 
+        inner join terms t2 on t1.term_id=t2.term_id where term_name="n_VF_pan_90";
+        '''
+        species_median_N_pan = pandas.read_sql(sql, self.conn)
+        species_median_N_pan["n_pan_90"] = pandas.to_numeric(species_median_N_pan["n_pan_90"])
+        species_median_N_pan["taxon_id"] = species_median_N_pan["taxon_id"].astype(str) 
+        taxid2pan_VF_median = species_median_N_pan.groupby(["taxon_id"]).mean().to_dict()["n_pan_90"]
+        
+        taxid_list = set(list(taxid2pan_VF_median.keys()) + list(taxid2core_VF_median.keys()))
+        for taxid in taxid_list:
+            if taxid not in taxid2core_VF_median:
+                taxid2core_VF_median[taxid] = 0
+            if taxid not in taxid2pan_VF_median:
+                taxid2pan_VF_median[taxid] = 0 
+                
+        if not percentages:
+            return taxid2core_VF_median, taxid2pan_VF_median
+        else:
+            
+            taxid2proportion_core = {}
+            taxid2proportion_pan = {} 
+            for taxid in taxid_list:
+                combined = (taxid2core_VF_median[taxid] + taxid2pan_VF_median[taxid])
+                #print("combined",taxid, combined)
+                taxid2proportion_core[taxid] = round((taxid2core_VF_median[taxid] / combined) * 100, 2)
+                taxid2proportion_pan[taxid] = round((taxid2pan_VF_median[taxid] / combined) * 100, 2)
+            return taxid2proportion_core, taxid2proportion_pan
+
+    def get_assemblies_size(self,):
+        
+        sql = '''
+        select taxon_id,CAST(cumulated_size as FLOAT)/1000000 as genome_size from genome_assembly_table t1 
+        inner join genome_assembly_table2taxon_id t2 on t1.assembly_id=t2.assembly_id;
+        '''
+                    
+        return pandas.read_sql(sql, self.conn)    
+    
+    
     
     def write_circos_files(self, assembly_accession, taxon_id, output_path):
         
@@ -593,10 +833,10 @@ class DB:
         
         genome_data = self.get_genome_data(assembly_accession, taxon_id)
         cluster_id2frequency = self.get_mmseq_cluster_frequency(taxon_id)
-        VF_cluster2freq = self.get_cluster2frequency_within_species(taxon_id, 
-                                                                    min_identity=80, 
-                                                                    min_coverage=60,
-                                                                    percentages=True)
+        VF_cluster2freq = self.get_VF_cluster2frequency_within_species(taxon_id, 
+                                                                       min_identity=80, 
+                                                                       min_coverage=60,
+                                                                       percentages=True)
         
         n_genomes = self.get_n_genomes(taxon_id)
         
@@ -665,8 +905,9 @@ fill_color         = lgreen
 
         VF_detail = self.get_assembly_VF_list(assembly_accession, 90, taxon_id)
         cluster_filter = '","'.join(VF_detail["cluster_name"].unique())
-        sql = f'select distinct cluster_name,gene from uniparc_consensus_annotation t1 inner join {CLUSTERING_TABLE} t2 on t1.uniparc_id=t2.uniparc_id where t2.cluster_name in ("{cluster_filter}")'
-        print(sql)
+        sql = f'''select distinct cluster_name,gene from uniparc_consensus_annotation t1 
+        inner join {CLUSTERING_TABLE} t2 on t1.uniparc_id=t2.uniparc_id where t2.cluster_name in ("{cluster_filter}")'''
+        #print(sql)
         cluster2gene = {i[0]:i[1] for i in self.server.execute(sql,).fetchall()}
         
         VF_nr_list = VF_detail["hit_accession"].unique()
@@ -703,12 +944,27 @@ fill_color         = lgreen
         
         sql = f'''select record_id,t1.accession,start,end,strand,plasmid,t3.cluster_id from circos_genome2proteins t1 
         inner join genome_assembly_table t2 on t1.assembly_id=t2.assembly_id
-        inner join circos_proteins2mmseqs_80_80 t3 on t1.protein_id=t3.protein_id
-        where t2.accession="{assembly_accession}" and t2.taxon_id={taxon_id} order by record_id,start;
+        inner join circos_proteins2mmseqs t3 on t1.protein_id=t3.protein_id
+        inner join genome_assembly_table2taxon_id t4 on t2.assembly_id=t4.assembly_id
+        where t2.accession="{assembly_accession}" 
+        and t4.taxon_id={taxon_id}
+        and t3.taxon_id={taxon_id}
+        and t3.id_cutoff=80
+        and t3.cov_cutoff=80
+        order by record_id,start;
         '''
         print(sql)
+        table = pandas.read_sql(sql, self.conn)
+        #print(table.head())
+ 
+        return table
 
-        return pandas.read_sql(sql, self.conn)
+    def get_rank(self, taxon_id):
+        from ete3 import NCBITaxa
+        ncbi = NCBITaxa()
+        print(ncbi.get_rank([taxon_id]))
+        rank = ncbi.get_rank([taxon_id])[int(taxon_id)]
+        return rank
 
     def get_rank_name(self, rank, taxon_id):
     
@@ -721,6 +977,24 @@ fill_color         = lgreen
         sql = f'select phylogeny from species_phylogeny where taxon_id={taxon_id}'
     
         return self.server.execute(sql,).fetchall()[0][0]
+
+
+    def get_genome_distance(self, assembly_id, distance="AAI"):
+        
+        sql = f'''select accession,distance from genome_assembly_distance t1 
+                 inner join terms t2 on t1.term_id=t2.term_id 
+                 inner join genome_assembly_table t3 on t1.assembly_b=t3.assembly_id 
+                 where assembly_a={assembly_id} and term_name="{distance}"
+                 union 
+                 select accession,distance from genome_assembly_distance t1 
+                 inner join terms t2 on t1.term_id=t2.term_id 
+                 inner join genome_assembly_table t3 on t1.assembly_a=t3.assembly_id 
+                 where assembly_b={assembly_id} and term_name="{distance}"
+                 ;
+             '''
+        
+        return {i[0]:round(i[1],1) for i in self.server.execute(sql,).fetchall()}
+        
 
     def get_ducplicate_gene_names(self,
                                   rank,
@@ -737,7 +1011,58 @@ fill_color         = lgreen
 
         return self.server.execute(sql,).fetchall()
         
+
+    def cluster2annotation(self, 
+                           cluster_id_list, 
+                           accessions=False):
         
+        if accessions:
+            column = 'cluster_name'
+            cluster_fam_filter = '"%s"' % '","'.join([str(i) for i in cluster_id_list])
+        else:
+            column = 'cluster_id'
+            cluster_fam_filter = ','.join([str(i) for i in cluster_id_list])
+
+            
+        print("NUMBER OF CLUSTERS:", len (cluster_id_list))
+
+        sql = f'select cluster_name,uniparc_accession,description from uniparc_entry t1' \
+            f' inner join {CLUSTERING_TABLE} t2 on t1.uniparc_id=t2.uniparc_id ' \
+            f' inner join uniparc_consensus_annotation t3 on t1.uniparc_id=t3.uniparc_id where t2.{column} in ({cluster_fam_filter});'
+
+        sql2 = f'select distinct cluster_name,phylum_name,species_name from {CLUSTERING_TABLE} t1 ' \
+            f' inner join uniparc2species t2 on t1.uniparc_id=t2.uniparc_id where t1.{column} in ({cluster_fam_filter}) and species_name not like "%% sp.%%";'
+
+        sql3 = f'select cluster_name,count(*) as n_db from ' \
+            f' (select distinct cluster_name,db_id from uniparc_entry t1 ' \
+            f' inner join {CLUSTERING_TABLE} t2 on t1.uniparc_id=t2.uniparc_id ' \
+            f' inner join VF_table t3 on t1.uniparc_id=t3.uniparc_id where t2.{column} in ({cluster_fam_filter})) A group by cluster_name'
+
+        self.server.execute(sql,)
+        annotation = self.server.fetchall()
+        self.server.execute(sql2,)
+        species = self.server.fetchall()
+        self.server.execute(sql3,)
+        cluster_name2n_db = {i[0]:i[1] for i in self.server.fetchall()}
+
+        cluster2annotations = {}
+        cluster2species = {}
+        for row in species:
+            if row[0] not in cluster2species:
+                cluster2species[row[0]] = ["%s (%s)" % (row[2], row[1])]
+            else:
+                cluster2species[row[0]].append("%s (%s)" % (row[2], row[1]))
+
+        for row in annotation:
+            if row[0] not in cluster2annotations:
+                # species (phylum)
+                cluster2annotations[row[0]] = [row[1:]]
+            else:
+                cluster2annotations[row[0]].append(row[1:])
+        return cluster2annotations, cluster2species, cluster_name2n_db
+
+
+      
 def get_cluster_profile_matrix(taxon_id, min_identity=95):
 
     # get assembly_accession 2 cluster
@@ -755,12 +1080,13 @@ def get_cluster_profile_matrix(taxon_id, min_identity=95):
     cursor = conn.cursor()
 
     cursor = conn.cursor()
-    sql = 'select distinct accession,cluster_name from ' \
-          ' (select distinct t2.accession,t1.VF_id ' \
-          ' from genome_blast_results t1 inner join genome_assembly_table t2 ' \
-          ' on t1.assembly_id=t2.assembly_id ' \
-          ' where percent_identity>=%s and taxon_id=%s) A ' \
-          ' inner join cluster_90 B on A.VF_id=B.VF_id;' % (min_identity, taxon_id)
+    sql = '''select distinct accession,cluster_name from
+           (select distinct t2.accession,t1.VF_id from genome_blast_results t1 
+           inner join genome_assembly_table t2 on t1.assembly_id=t2.assembly_id
+           inner join genome_assembly_table2taxon_id t3 on t2.assembly_id=t3.assembly_id
+           where percent_identity>=%s and t3.taxon_id=%s) A 
+           inner join cluster_90 B on A.VF_id=B.VF_id;' % (min_identity, taxon_id)
+        '''
     cursor.execute(sql,)
     assembly_clusters = cursor.fetchall()
     cluster_list = list(set([i[1] for i in assembly_clusters]))
@@ -804,59 +1130,6 @@ def get_cluster_profile_matrix(taxon_id, min_identity=95):
 #get_cluster_profile_matrix(1280, min_identity=90)
 
 
-def cluster2annotation(cluster_id_list, accessions=False):
-    import os
-    import sqlite3
-
-    db = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + "/virulence.db"
-    conn = sqlite3.connect(db)
-
-    cursor = conn.cursor()
-    
-    if accessions:
-        column = 'cluster_name'
-        cluster_fam_filter = '"%s"' % '","'.join([str(i) for i in cluster_id_list])
-    else:
-        column = 'cluster_id'
-        cluster_fam_filter = ','.join([str(i) for i in cluster_id_list])
-
-        
-    print("NUMBER OF CLUSTERS:", len (cluster_id_list))
-
-    sql = f'select cluster_name,uniparc_accession,description from uniparc_entry t1' \
-          f' inner join {CLUSTERING_TABLE} t2 on t1.uniparc_id=t2.uniparc_id ' \
-          f' inner join uniparc_consensus_annotation t3 on t1.uniparc_id=t3.uniparc_id where t2.{column} in ({cluster_fam_filter});'
-
-    sql2 = f'select distinct cluster_name,phylum_name,species_name from {CLUSTERING_TABLE} t1 ' \
-           f' inner join uniparc2species t2 on t1.uniparc_id=t2.uniparc_id where t1.{column} in ({cluster_fam_filter}) and species_name not like "%% sp.%%";'
-
-    sql3 = f'select cluster_name,count(*) as n_db from ' \
-           f' (select distinct cluster_name,db_id from uniparc_entry t1 ' \
-           f' inner join {CLUSTERING_TABLE} t2 on t1.uniparc_id=t2.uniparc_id ' \
-           f' inner join VF_table t3 on t1.uniparc_id=t3.uniparc_id where t2.{column} in ({cluster_fam_filter})) A group by cluster_name'
-
-    cursor.execute(sql,)
-    annotation = cursor.fetchall()
-    cursor.execute(sql2,)
-    species = cursor.fetchall()
-    cursor.execute(sql3,)
-    cluster_name2n_db = {i[0]:i[1] for i in cursor.fetchall()}
-
-    cluster2annotations = {}
-    cluster2species = {}
-    for row in species:
-        if row[0] not in cluster2species:
-            cluster2species[row[0]] = ["%s (%s)" % (row[2], row[1])]
-        else:
-            cluster2species[row[0]].append("%s (%s)" % (row[2], row[1]))
-
-    for row in annotation:
-        if row[0] not in cluster2annotations:
-            # species (phylum)
-            cluster2annotations[row[0]] = [row[1:]]
-        else:
-            cluster2annotations[row[0]].append(row[1:])
-    return cluster2annotations, cluster2species, cluster_name2n_db
 
 
 def make_div(figure_or_data, include_plotlyjs=False, show_link=False, div_id=None):
@@ -874,7 +1147,7 @@ def make_div(figure_or_data, include_plotlyjs=False, show_link=False, div_id=Non
 
         try:
             existing_id = re.findall(r'id="(.*?)"|$', div)[0]
-            print(existing_id, div_id)
+            #print(existing_id, div_id)
             div = div.replace(existing_id, div_id)
         except IndexError:
             pass
