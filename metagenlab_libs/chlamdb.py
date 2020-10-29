@@ -15,6 +15,8 @@ import sqlite3
 import os
 import MySQLdb
 
+import db_utils
+
 DEFAULT_PSSWD = ""
 DEFAULT_TYPE = "sqlite"
 DEFAULT_DB_NAME = "George"
@@ -107,7 +109,7 @@ def setup_biodb(kwargs):
     sqlpsw = kwargs.get("chlamdb.sql_psswd", DEFAULT_PSSWD)
     db_type = kwargs.get("chlamdb.db_type", DEFAULT_TYPE)
     db_name = kwargs.get("chlamdb.db_name", DEFAULT_DB_NAME)
-    schema_dir = kwargs.get("chlamdb.biosql_schema_dir", "biosql_scheme")
+    schema_dir = kwargs.get("chlamdb.biosql_schema_dir", "biosql_schema")
 
     if db_type=="sqlite":
         conn = sqlite3.connect(db_name)
