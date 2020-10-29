@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
-from ete3 import Tree, SeqMotifFace, TreeStyle, add_face_to_node, TextFace, BarChartFace, StackedBarFace, NodeStyle, faces
+from ete3 import Tree, SeqMotifFace, TreeStyle, add_face_to_node, TextFace, BarChartFace, StackedBarFace, NodeStyle, faces, PhyloTree, PhyloNode
+import ete3
 from matplotlib.colors import rgb2hex
 
              
@@ -25,12 +26,22 @@ class EteTool():
         self.color_index = 0
          
         self.rotate = False
-             
-        self.tree = Tree(tree_file)
+        
+        # if not tree instance, considfer it as a path or a newick string
+        print("TREE TYOE:", type(tree_file))
+        if isinstance(tree_file, Tree):
+            self.tree = tree_file
+        elif isinstance(tree_file, ete3.phylo.phylotree.PhyloNode):
+            self.tree = tree_file
+        else:
+            self.tree = Tree(tree_file)
         # Calculate the midpoint node
         R = self.tree.get_midpoint_outgroup()
         # and set it as tree outgroup
-        self.tree.set_outgroup(R)
+        try:
+            self.tree.set_outgroup(R)
+        except:
+            pass
     
         self.tss = TreeStyle()
         self.tss.draw_guiding_lines = True
@@ -46,10 +57,22 @@ class EteTool():
         pass
 
     def rename_leaves(self,
-                      taxon2new_taxon):
+                      taxon2new_taxon,
+                      keep_original=False):
         for i, lf in enumerate(self.tree.iter_leaves()):
-            n = TextFace(taxon2new_taxon[lf.name], fgcolor = "black", fsize = 12, fstyle = 'italic')
+            if not keep_original:
+                if lf.name in taxon2new_taxon:
+                    label = taxon2new_taxon[lf.name]
+                else:
+                    label = 'n/a'
+            else:
+                if lf.name in taxon2new_taxon:
+                    label = '%s (%s)' % (taxon2new_taxon[lf.name], lf.name)
+                else:
+                    label = 'n/a'
+            n = TextFace(label, fgcolor = "black", fsize = 12, fstyle = 'italic')
             lf.add_face(n, 0)
+            lf.name = label
     
     def add_heatmap(self, 
                     taxon2value, 
@@ -129,7 +152,10 @@ class EteTool():
                            taxon2value, 
                            header_name,
                            color=False,
-                           show_values=False):
+                           show_values=False,
+                           substract_min=False,
+                           highlight_cutoff=False,
+                           highlight_reverse=False):
 
         if not show_values:
             self._add_header(header_name, column_add=0)
@@ -137,6 +163,13 @@ class EteTool():
             self._add_header(header_name, column_add=1)
         
         values_lists = [float(i) for i in taxon2value.values()]
+
+        min_value = min(values_lists)
+        
+        if substract_min:
+            values_lists = [i-min_value for i in values_lists]
+            for taxon in list(taxon2value.keys()):
+                taxon2value[taxon] = taxon2value[taxon]-min_value
 
         if not color:
             color = self._get_default_barplot_color()
@@ -150,10 +183,14 @@ class EteTool():
 
             if show_values:
                 barplot_column = 1
-                if isinstance(value, float):
-                    a = TextFace(" %s " % str(round(value,2)))
+                if substract_min:
+                    real_value = value + min_value
                 else:
-                    a = TextFace(" %s " % str(value))
+                    real_value = value
+                if isinstance(real_value, float):
+                    a = TextFace(" %s " % str(round(real_value,2)))
+                else:
+                    a = TextFace(" %s " % str(real_value))
                 a.margin_top = 1
                 a.margin_right = 2
                 a.margin_left = 5
@@ -167,7 +204,25 @@ class EteTool():
             fraction_biggest = (float(value)/max(values_lists))*100
             fraction_rest = 100-fraction_biggest
 
-            b = StackedBarFace([fraction_biggest, fraction_rest], width=100, height=15,colors=[color, 'white'])
+            if highlight_cutoff:
+                if substract_min:
+                    real_value = value + min_value
+                else:
+                    real_value = value
+                if highlight_reverse:
+                    if real_value > highlight_cutoff:
+                        lcolor = "grey"
+                    else:
+                        lcolor = color
+                else:
+                    if real_value < highlight_cutoff:
+                        lcolor = "grey"
+                    else:
+                        lcolor = color
+            else:
+                lcolor = color
+            
+            b = StackedBarFace([fraction_biggest, fraction_rest], width=100, height=15,colors=[lcolor, 'white'])
             b.rotation= 0
             b.inner_border.color = "grey"
             b.inner_border.width = 0
