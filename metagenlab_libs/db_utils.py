@@ -1242,6 +1242,7 @@ class DB:
             hsh_results[seqid] = cog_id
         return hsh_results
 
+
     def get_filenames_to_bioentry(self):
         sql = (
             "SELECT * FROM filenames;"
@@ -1251,6 +1252,16 @@ class DB:
         for line in results:
             hsh_filenames_to_bioentry[line[1].replace(".gbk", "")] = line[0]
         return hsh_filenames_to_bioentry
+
+
+    def load_chlamdb_config_tables(self, entries):
+        sql = (
+            "CREATE TABLE biodb_config"
+            "(name varchar(200), type varchar(200), status BOOLEAN);"
+        )
+        self.server.adaptor.execute(sql)
+        self.load_data_into_table("biodb_config", entries)
+
 
     # wrapper methods
     def commit(self):
