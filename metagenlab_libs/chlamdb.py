@@ -25,7 +25,7 @@ DEFAULT_TYPE = "sqlite"
 DEFAULT_DB_NAME = "George"
 
 
-def create_data_table(db, kwargs):
+def create_data_table(db):
     entry_list = [
         ("orthology", "mandatory", False),
         ("orthogroup_alignments", "mandatory", False),
@@ -120,13 +120,122 @@ def simplify_desc(string):
     tokens = string.split(";")
     return tokens[-1]
 
+# code imported from the Bio.KEGG module
+class Record(object):
+    def __init__(self):
+        self.entry = ""
+        self.name = []
+        self.definition = ""
+        self.modules = []
+        self.pathways = []
 
-def parse_pathway(buff):
-    pass
+    def __str__(self):
+        acc = self.entry + " " + self.name + " " + self.definition
+        return acc
 
+
+class Module(object):
+    def __init__(self, entry, descr):
+        self.entry = entry
+        self.descr = descr
+        self.classes = []
+
+    def simplified_entry(self):
+        return int(self.entry[len("M"):])
+
+    def __str__(self):
+        return self.entry + ": " + self.descr
+
+    def __hash__(self):
+        return hash(self.entry)
+
+    def __eq__(self, other):
+        return self.entry == other.entry
+
+    def parse(self, handle):
+        for line in handle:
+            if line[:3] == "///":
+                return
+            if line[:12] != "            ":
+                keyword = line[:12]
+            data = line[12:].strip()
+            if keyword == "CLASS       ":
+                tokens = data.split(";")
+                self.classes = [token.strip() for token in tokens]
+
+
+class Pathway(object):
+    def __init__(self, entry, descr):
+        self.entry = entry
+        self.descr  = descr
+
+    def simplified_entry(self):
+        return int(self.entry[len("ko"):])
+
+    def __hash__(self):
+        return hash(self.entry)
+
+    def __eq__(self, other):
+        return self.entry == other.entry
+
+    def __str__(self):
+        return self.entry + ": " + self.descr
+
+
+def parse_gene(handle):
+    record = Record()
+    for line in handle:
+        if line[:3] == "///":
+            yield record
+            record = Record()
+            continue
+        if line[:12] != "            ":
+            keyword = line[:12]
+        data = line[12:].strip()
+        if keyword == "ENTRY       ":
+            words = data.split()
+            record.entry = words[0]
+        elif keyword == "NAME        ":
+            data = data.strip(";")
+            record.name.append(data)
+        elif keyword == "DEFINITION  ":
+            record.definition = data
+        elif keyword == "MODULE      ":
+            module, *descr_tokens = data.split()
+            descr = " ".join(descr_tokens)
+            record.modules.append(Module(module, descr))
+        elif keyword == "PATHWAY     ":
+            pathway, *descr_tokens = data.split()
+            descr = (" ".join(descr_tokens)).strip()
+            record.pathways.append(Pathway(pathway, descr))
 
 def parse_module(buff):
-    pass
+    record = Module()
+    for line in handle:
+        if line[:3] == "///":
+            yield record
+            record = Record()
+            continue
+        if line[:12] != "            ":
+            keyword = line[:12]
+        data = line[12:].strip()
+        if keyword == "ENTRY       ":
+            words = data.split()
+            record.entry = words[0]
+        elif keyword == "NAME        ":
+            data = data.strip(";")
+            record.name.append(data)
+        elif keyword == "DEFINITION  ":
+            record.definition = data
+        elif keyword == "MODULE      ":
+            module, *descr_tokens = data.split()
+            descr = " ".join(descr_tokens)
+            record.modules.append(Module(module, descr))
+        elif keyword == "PATHWAY     ":
+            pathway, *descr_tokens = data.split()
+            descr = (" ".join(descr_tokens)).strip()
+            print(pathway, ": ",  descr)
+            record.pathways.append(Pathway(pathway, descr))
 
 
 def load_KO_references(params):
@@ -214,6 +323,7 @@ def setup_cog(params):
     db.commit()
 
 
+"""
 
 parser = argparse.ArgumentParser(description = "Creates a chlamdb database skeleton")
 
@@ -245,3 +355,4 @@ if args.load_cog:
 
 if args.load_kegg:
     load_KO_references(db, args)
+    """
