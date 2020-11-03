@@ -1294,6 +1294,10 @@ class DB:
                                                   db=f"{db_name}")
         return DB(server, db_name)
 
-    def load_db_from_name(db_name, db_type = "sqlite"):
-        params = {"chlamdb.db_type" : db_type, "chlamdb.db_name" : db_name}
+
+    def load_db_from_name(db_name, params = None):
+        if params == None:
+            params = {"chlamdb.db_name": db_name}
+        else:
+            params["chlamdb.db_name"] = db_name
         return DB.load_db(params)
