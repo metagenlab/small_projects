@@ -313,7 +313,7 @@ class DB:
     def load_ko_module(self, data):
         sql = (
             "CREATE TABLE ko_module_def ("
-            "module_id INTEGER, desc TEXT, "
+            "module_id INTEGER, desc TEXT, definition TEXT, "
             "PRIMARY KEY(module_id));"
         )
         self.server.adaptor.execute(sql)
@@ -1274,7 +1274,7 @@ class DB:
     # of database? Would allow to avoid code duplication if several database
     # types are to be included.
     def load_db(params):
-        sqlpsw = os.environ['SQLPSW']
+        sqlpsw = params.get("chlamdb.db_psswd", "")
         db_type = params["chlamdb.db_type"]
         db_name = params["chlamdb.db_name"]
 

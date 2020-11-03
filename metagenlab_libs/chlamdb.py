@@ -17,6 +17,9 @@ import os
 import db_utils
 import argparse
 
+import queue
+import threading
+
 from Bio.KEGG import REST
 from Bio.KEGG import Gene
 
@@ -95,30 +98,14 @@ def setup_biodb(kwargs):
 
     # not really logical to me, but creating a database
     # from the biosql is necessary
-    db = db_utils.DB.load_db(kwargs)
-    db.create_biosql_database(kwargs)
+    chlamdb_args = {"chlamdb.db_type": db_type,
+            "chlamdb.db_name": db_name,
+            "chlamdb.db_psswd": sqlpsw}
+    db = db_utils.DB.load_db(chlamdb_args)
+    db.create_biosql_database(chlamdb_args)
     db.commit()
     return db
 
-
-def simplify_pathway(raw_pathway):
-    return int(raw_pathway[len("path:map"):])
-
-
-def simplify_module(raw_module):
-    return int(raw_module[len("md:M"):])
-
-
-def parse_REST_result(string, c1_name, c2_name):
-    entries = string.strip().split("\n")
-    to_cols = pd.DataFrame([entry.split("\t") for entry in entries],
-            columns=[c1_name, c2_name])
-    return to_cols
-
-
-def simplify_desc(string):
-    tokens = string.split(";")
-    return tokens[-1]
 
 # code imported from the Bio.KEGG module
 class Record(object):
@@ -129,8 +116,11 @@ class Record(object):
         self.modules = []
         self.pathways = []
 
+    def simplified_entry(self):
+        return int(self.entry[len("K"):])
+
     def __str__(self):
-        acc = self.entry + " " + self.name + " " + self.definition
+        acc = self.entry + " " + self.definition
         return acc
 
 
@@ -139,6 +129,7 @@ class Module(object):
         self.entry = entry
         self.descr = descr
         self.classes = []
+        self.definition = ""
 
     def simplified_entry(self):
         return int(self.entry[len("M"):])
@@ -162,6 +153,8 @@ class Module(object):
             if keyword == "CLASS       ":
                 tokens = data.split(";")
                 self.classes = [token.strip() for token in tokens]
+            if keyword == "DEFINITION  ":
+                self.definition = data
 
 
 class Pathway(object):
@@ -209,87 +202,54 @@ def parse_gene(handle):
             descr = (" ".join(descr_tokens)).strip()
             record.pathways.append(Pathway(pathway, descr))
 
-def parse_module(buff):
-    record = Module()
-    for line in handle:
-        if line[:3] == "///":
-            yield record
-            record = Record()
-            continue
-        if line[:12] != "            ":
-            keyword = line[:12]
-        data = line[12:].strip()
-        if keyword == "ENTRY       ":
-            words = data.split()
-            record.entry = words[0]
-        elif keyword == "NAME        ":
-            data = data.strip(";")
-            record.name.append(data)
-        elif keyword == "DEFINITION  ":
-            record.definition = data
-        elif keyword == "MODULE      ":
-            module, *descr_tokens = data.split()
-            descr = " ".join(descr_tokens)
-            record.modules.append(Module(module, descr))
-        elif keyword == "PATHWAY     ":
-            pathway, *descr_tokens = data.split()
-            descr = (" ".join(descr_tokens)).strip()
-            print(pathway, ": ",  descr)
-            record.pathways.append(Pathway(pathway, descr))
 
+def load_KO_references(db, params):
+    ko_string = REST.kegg_list("KO")
+    ko_codes = []
+    for line in ko_string:
+        ko_codes.append(line.split()[0])
 
-def load_KO_references(params):
-    db = db_utils.DB.load_db(params)
-    ko_string = REST.kegg_list("KO").read()
-    ko_id_to_desc = parse_REST_result(ko_string, "ko", "desc")
-    ko_id_to_desc["ko_simplified"] = ko_id_to_desc["ko"].apply(simplify_ko)
-    ko_id_to_desc["desc"] = ko_id_to_desc["desc"].apply(simplify_desc)
-    db.load_ko_def(ko_id_to_desc[["ko_simplified", "desc"]].values.tolist())
+    genes = []
+    for i, ko_code in enumerate(ko_codes):
+        buf = REST.kegg_get(ko_code)
+        for gene in parse_gene(buf):
+            genes.append(gene)
+        if i==15:
+            # test version: do not download all keggs
+            break
 
-    path_string = REST.kegg_list("pathway").read()
-    path_id_to_desc = parse_REST_result(path_string, "pathway", "desc")
-    path_id_to_desc["pathway"] = path_id_to_desc["pathway"].apply(simplify_pathway)
-    db.load_ko_pathway(path_id_to_desc.values.tolist())
+    modules_set = {module for gene in genes for module in gene.modules}
+    pathway_set = {pathway for gene in genes for pathway in gene.pathways}
+    for module in modules_set:
+        mod_data = REST.kegg_get(module.entry)
+        module.parse(mod_data)
 
-    mod_string = REST.kegg_list("module").read()
-    mod_id_to_desc = parse_REST_result(mod_string, "module", "desc")
-    mod_id_to_desc["module"] = mod_id_to_desc["module"].apply(simplify_module)
-    db.load_ko_module(mod_id_to_desc.values.tolist())
+    db.load_ko_module([(m.simplified_entry(), m.descr, m.definition) for m in modules_set])
+    db.load_ko_pathway([(p.simplified_entry(), p.descr) for p in pathway_set])
+    db.load_ko_def([(gene.simplified_entry(), gene.definition) for gene in genes])
 
-    ko_to_module_data = []
-    ko_to_pathway_data = []
-    for lst_ko in chunks(ko_id_to_desc["ko"].unique().tolist(), 200):
-        ko_to_module = REST.kegg_link("module", lst_ko).read()
-        if len(ko_to_module) > 1:
-            ko_to_module_desc = parse_REST_result(ko_to_module, "ko", "module")
-            ko_to_module_desc["ko"] = ko_to_module_desc["ko"].apply(simplify_ko)
-            ko_to_module_desc["module"] = ko_to_module_desc["module"].apply(simplify_module)
-            ko_to_module_data.append(ko_to_module_desc.drop_duplicates().values.tolist())
-
-        ko_to_pathway = REST.kegg_link("pathway", lst_ko).read()
-        if len(ko_to_pathway) > 1:
-            ko_to_pathway_desc = parse_REST_result(ko_to_pathway, "ko", "pathway")
-            ko_to_pathway_desc["ko"] = ko_to_pathway_desc["ko"].apply(simplify_ko)
-            ko_to_pathway_desc = ko_to_pathway_desc[ko_to_pathway_desc.pathway.str.startswith("path:map")]
-            ko_to_pathway_desc["pathway"] = ko_to_pathway_desc["pathway"].apply(simplify_pathway)
-            ko_to_pathway_data.append(ko_to_pathway_desc.drop_duplicates().values.tolist())
-    db.load_ko_to_pathway([elem for lst in ko_to_pathway_data for elem in lst])
-    db.load_ko_to_module([elem for lst in ko_to_module_data for elem in lst])
+    ko_to_path = []
+    ko_to_module = []
+    for gene in genes:
+        simp = gene.simplified_entry()
+        ko_to_path.extend((simp, path.simplified_entry()) for path in gene.pathways)
+        ko_to_module.extend((simp, mod.simplified_entry()) for mod in gene.modules)
+    db.load_ko_to_pathway(ko_to_path)
+    db.load_ko_to_module(ko_to_module)
     db.commit()
+    return genes
 
 
-def setup_cog(params):
-    db = db_utils.DB.load_db(params)
-
-    cog2cdd_file = open(params["cog_dir"]+"/COG/cog_corresp.tab", "r")
-    cog2length_file = open(params["cog_dir"]+"/COG/cog_length.tab", "r")
-    fun_names_file = open(params["cog_dir"]+"/COG/fun2003-2014.tab")
-    cog_names_file = open(params["cog_dir"]+"/COG/cognames2003-2014.tab")
+def setup_cog(db, cog_dir):
+    cog2cdd_file = open(cog_dir+"/cog_corresp.tab", "r")
+    cog2length_file = open(cog_dir+"/cog_length.tab", "r")
+    fun_names_file = open(cog_dir+"/fun2003-2014.tab")
+    cog_names_file = open(cog_dir+"/cognames2003-2014.tab")
 
     cdd_to_cog = []
     for line in cog2cdd_file:
         tokens = line.split("\t")
-        cdd_to_cog.append( (int(tokens[1].strip()), int(tokens[0][3:])) )
+        cdd_to_cog.append( (int(tokens[1].strip()), int(tokens[0][len("COG"):])) )
     db.load_cdd_to_cog(cdd_to_cog)
 
     hsh_cog_to_length = {}
@@ -323,36 +283,36 @@ def setup_cog(params):
     db.commit()
 
 
-"""
-
 parser = argparse.ArgumentParser(description = "Creates a chlamdb database skeleton")
 
-parser.add_argument("--db_name", nargs="+", default=DEFAULT_DB_NAME,
-        help="name of the database (default name George)")
+parser.add_argument("--db_name", nargs="?", default=DEFAULT_DB_NAME,
+        help=f"name of the database (default name {DEFAULT_DB_NAME})")
 
-parser.add_argument("--load_cog", nargs="?", default=True,
-        help="load cog definitions (default yes)")
+parser.add_argument("--load_cog", action="store_true",
+        help="load cog definitions (default no)")
 
 parser.add_argument("--cog_dir", nargs="?", default="./",
         help="directory where the cog definitions files are (default current directory)")
 
-parser.add_argument("--load_kegg", nargs="?", default=True,
+parser.add_argument("--load_kegg", action="store_true",
         help="load kegg definitions (default yes)")
 
-parser.add_argument("--db_type", nargs="+", default=DEFAULT_TYPE,
+parser.add_argument("--db_type", nargs="?", default=DEFAULT_TYPE,
         help="database type (either sqlite or mysql)")
 
 parser.add_argument("--db_psswd", nargs="+", default=DEFAULT_PSSWD,
         help="set db password (default none)")
 
-args = parser.parse_args()
+args = vars(parser.parse_args())
 
-
+print("Setting up the biosql schema")
 db = setup_biodb(args)
-create_data_table(db, args)
-if args.load_cog:
-    setup_cog(db, args)
+create_data_table(db)
 
-if args.load_kegg:
-    load_KO_references(db, args)
-    """
+if args.get("load_cog", False):
+    print("Loading COG tables")
+    setup_cog(db, args.get("cog_dir", "."))
+
+if args.get("load_kegg", False):
+    print("Loading KEGG tables")
+    genes = load_KO_references(db, args)
