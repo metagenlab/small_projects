@@ -20,7 +20,7 @@ class EteTool():
                  tree_file):
                
         self.column_count = 0
-        
+
         self.default_colors = ['#fc8d59', '#91bfdb', '#99d594', '#c51b7d', '#f1a340', '#999999']
         
         self.color_index = 0
@@ -46,7 +46,7 @@ class EteTool():
         self.tss = TreeStyle()
         self.tss.draw_guiding_lines = True
         self.tss.guiding_lines_color = "gray"
-        self.tss.show_leaf_name = False      
+        self.tss.show_leaf_name = False     
 
 
     def add_stacked_barplot(self,
@@ -58,8 +58,16 @@ class EteTool():
 
     def rename_leaves(self,
                       taxon2new_taxon,
-                      keep_original=False):
+                      keep_original=False,
+                      add_face=True):
         for i, lf in enumerate(self.tree.iter_leaves()):
+            #print(dir(lf))
+            #print((lf.faces[0]))
+            #lf.faces
+            # = None
+            #print("Iter leaf names")
+            #for i in lf.features:
+            #    print("i", i)
             if not keep_original:
                 if lf.name in taxon2new_taxon:
                     label = taxon2new_taxon[lf.name]
@@ -70,9 +78,12 @@ class EteTool():
                     label = '%s (%s)' % (taxon2new_taxon[lf.name], lf.name)
                 else:
                     label = 'n/a'
-            n = TextFace(label, fgcolor = "black", fsize = 12, fstyle = 'italic')
-            lf.add_face(n, 0)
+            #print ("add_face", add_face)
+            #if add_face:
+            #    n = TextFace(label, fgcolor = "black", fsize = 12, fstyle = 'italic')
+            #    lf.add_face(n, 0)
             lf.name = label
+            print(lf)
     
     def add_heatmap(self, 
                     taxon2value, 
