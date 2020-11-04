@@ -190,9 +190,152 @@ class DB:
                    inner join VF_databases C on B.db_id=C.db_id group by db_name,cluster_id) AA group by AA.db_name;
                    ''' 
         
-        return {i[0]:i[1] for i in self.server.execute(sql,).fetchall()}
+        return {i[0]:int(i[1]) for i in self.server.execute(sql,).fetchall()}
  
         
+    def get_taxon_id2n_VF_clusters(self, rank='species'):
+        
+        sql = f'''select {rank}_taxon_id, count(*) as n from (
+          select distinct cluster_id, {rank}_taxon_id from VF_table t1
+          inner join uniparc2species t2 on t1.uniparc_id=t2.uniparc_id
+          inner join {CLUSTERING_TABLE} t3 on t1.uniparc_id=t3.uniparc_id 
+          where species_name not like "%% sp.%%" 
+          and species_name not like "%%uncultured%%"
+          ) A
+          group by A.{rank}_taxon_id order by n DESC;
+          '''
+        
+        return {str(i[0]):i[1] for i in self.server.execute(sql,).fetchall()}
+
+
+    def get_taxon_id2n_VF_clusters_separate_dbs(self, rank='species'):
+        
+        sql = f'''select db_name,{rank}_taxon_id, count(*) as n from (
+          select distinct db_name,t3.cluster_id, t1.{rank}_taxon_id from uniparc2species t1 
+          inner join {CLUSTERING_TABLE} t2 on t1.uniparc_id=t2.uniparc_id 
+          inner join {CLUSTERING_TABLE} t3 on t2.cluster_id=t3.cluster_id
+          inner join VF_table t4 on t3.uniparc_id=t4.uniparc_id
+          inner join VF_databases t5 on t4.db_id=t5.db_id
+          where t1.species_name not like "%% sp.%%" 
+          and t1.species_name not like "%%uncultured%%"
+          ) A
+          group by A.db_name,A.{rank}_taxon_id order by n DESC;
+          '''
+        
+        db2taxid2cout = {}
+        for row in  self.server.execute(sql,).fetchall():
+            db_name, taxon_id, count = row
+            if db_name not in db2taxid2cout:
+                db2taxid2cout[db_name] = {}
+            db2taxid2cout[db_name][str(taxon_id)] = count
+        
+        return db2taxid2cout
+
+    def get_db2taxon_id2VF_freq(self, rank='species', min_identity=90, min_coverage=60):
+        
+        sql = f'''
+                    select AA.db_name,AA.species_taxon_id,AA.cluster_id,ifnull(BB.n, 0) from (
+                select distinct db_name,cluster_id,species_taxon_id from uniparc2species t1
+                inner join VF_table t2 on t1.uniparc_id=t2.uniparc_id
+                inner join VF_databases t3 on t2.db_id=t3.db_id
+                inner join {CLUSTERING_TABLE} t4 on t1.uniparc_id=t4.uniparc_id
+            ) AA
+            left join 
+                (
+                select B.taxon_id,B.cluster_id, count(*) as n from 
+                    (select distinct t7.taxon_id,t5.assembly_id,cluster_id from homology_search t1
+                    inner join homology_search_db_xrefs t2 on t1.search_tool_id=t2.id
+                    inner join homology_search_db_xrefs t3 on t1.substitution_matrix_id=t3.id
+                    inner join homology_search_db_xrefs t4 on t1.filtering_id=t4.id
+                    inner join genome_assembly_table t5 on t1.assembly_id=t5.assembly_id
+                    inner join uniparc2mmseqs_90_80 t6 on t1.uniparc_id=t6.uniparc_id
+                    inner join genome_assembly_table2taxon_id t7 on t5.assembly_id=t7.assembly_id
+                    where t1.percent_identity>={min_identity}
+                    and uniparc_seq_coverage>={min_coverage}
+                    and t2.name in ("ssearch", "tfastx") 
+                    and t3.name="BL50" 
+                    and t4.name="no_filtering_lowcomplexity"
+                    ) B group by B.taxon_id, B.cluster_id
+                ) BB
+            on AA.cluster_id=BB.cluster_id
+            and AA.species_taxon_id=BB.taxon_id;
+          '''
+        print(sql)
+        db2taxid2cout = {}
+        for row in  self.server.execute(sql,).fetchall():
+            db_name, taxon_id, cluster_id, count = row
+            if db_name not in db2taxid2cout:
+                db2taxid2cout[db_name] = {}
+            if str(taxon_id) not in  db2taxid2cout[db_name]:
+                db2taxid2cout[db_name][str(taxon_id)] = {}
+            db2taxid2cout[db_name][str(taxon_id)][cluster_id] = count
+        
+        return db2taxid2cout
+
+
+    def get_VF_cluster2frequency_within_species2(self,
+                                                 taxon_id_list, 
+                                                 min_identity=90, 
+                                                 min_coverage=60,
+                                                 percentages=False):
+        '''
+        Work with species and genus taxids
+        '''
+        taxon_id_list = [str(i) for i in taxon_id_list]
+        
+        if percentages:
+            taxid2n_genomes = {}
+            for taxon_id in taxon_id_list:
+                taxid2n_genomes[taxon_id] = self.get_n_genomes(taxon_id)
+        
+        print("taxid2n_genomes", taxid2n_genomes)
+        
+        taxid_filter = ','.join(taxon_id_list)
+
+        # get cluster frequency
+        # start from spacies table to count 
+        # VF clusters with 0 hits on all genomes
+        sql = f'''
+            select AA.species_taxon_id,AA.cluster_name,ifnull(BB.n, 0) as n from (
+                select distinct species_taxon_id,cluster_name from uniparc2species t1 
+                inner join uniparc2mmseqs_90_80 t2 on t1.uniparc_id=t2.uniparc_id
+                where (t1.species_taxon_id in ({taxid_filter}) or t1.genus_taxon_id in ({taxid_filter}))
+            ) AA
+            left join 
+                (
+                select taxon_id,cluster_name, count(*) as n from 
+                    (select distinct t7.taxon_id,t5.accession,cluster_name from homology_search t1
+                    inner join homology_search_db_xrefs t2 on t1.search_tool_id=t2.id
+                    inner join homology_search_db_xrefs t3 on t1.substitution_matrix_id=t3.id
+                    inner join homology_search_db_xrefs t4 on t1.filtering_id=t4.id
+                    inner join genome_assembly_table t5 on t1.assembly_id=t5.assembly_id
+                    inner join uniparc2mmseqs_90_80 t6 on t1.uniparc_id=t6.uniparc_id
+                    inner join genome_assembly_table2taxon_id t7 on t5.assembly_id=t7.assembly_id
+                    where t1.percent_identity>={min_identity}
+                    and uniparc_seq_coverage>={min_coverage}
+                    and t2.name in ("ssearch", "tfastx") 
+                    and t3.name="BL50" 
+                    and t4.name="no_filtering_lowcomplexity"
+                    and t7.taxon_id in ({taxid_filter})) B group by taxon_id,cluster_name
+                ) BB
+            on AA.cluster_name=BB.cluster_name and AA.species_taxon_id=BB.taxon_id;
+        '''
+
+        df = pandas.read_sql(sql, self.conn)
+        print("DF shape", df.shape)
+        # calculate frequency
+        def calculate(s):
+            taxid = str(s["species_taxon_id"])
+            n_genomes = taxid2n_genomes[taxid]
+            s["freq"] = round((float(s["n"])/n_genomes) * 100, 2)
+            return s
+
+        df_with_freq = df.apply(calculate, axis=1)
+        print("DF shape freq", df_with_freq.shape)
+        return df_with_freq
+
+
+  
     def get_VF_cluster2frequency_within_species(self,
                                              taxon_id, 
                                              min_identity=90, 
@@ -278,16 +421,16 @@ class DB:
         return {i[0]:i[1] for i in self.server.execute(sql,).fetchall()}
     
     def get_VF_cluster2frequency_within_species_separated_dbs(self,
-                                                           taxon_id, 
-                                                           min_identity=90, 
-                                                           min_coverage=80,
-                                                           percentages=False):
+                                                            taxon_id, 
+                                                            min_identity=90, 
+                                                            min_coverage=80,
+                                                            percentages=False):
         
         if percentages:
             n_genomes = self.get_n_genomes(taxon_id)
                
         # get cluster frequency
-        # start from spacies table to count 
+        # start from spcies table to count 
         # VF clusters with 0 hits on all genomes
         sql = f'''
                 select distinct EE.db_name,AA.cluster_name,ifnull(BB.n, 0) from (
@@ -506,17 +649,63 @@ class DB:
         
         return [i[0] for i in self.server.execute(sql,).fetchall()]
    
+   
+    def get_VF_mmseqs_clusters(self, taxon_id):
+        
+        '''
+        join on protein_accession?
+                
+        '''
+        
+        sql = ''
+        
+        return pandas.read_sql(sql, self.conn)
+        
+    def pan_genome_clusters(self,taxon_id):
+        
+
+        sql = f'''select distinct t3.accession,t2.cluster_id,count(*) as n from circos_genome2proteins t1 
+        inner join circos_proteins2mmseqs t2 on t1.protein_id=t2.protein_id 
+        inner join genome_assembly_table t3 on t1.assembly_id=t3.assembly_id
+        inner join genome_assembly_table2taxon_id t4 on t3.assembly_id=t4.assembly_id
+        where t4.taxon_id={taxon_id}
+        and t2.id_cutoff=80
+        and t2.cov_cutoff=80
+        group by t1.assembly_id,t2.cluster_id;
+        '''
+    
+        return pandas.read_sql(sql, self.conn)
+   
+   
+    def get_genome_accession2ani(self,
+                                 taxon_id):
+        
+        sql = f'''select t2.accession,t3.accession,ani from ani t1 
+        inner join genome_assembly_table t2 on t1.ref_assembly_id=t2.assembly_id 
+        inner join genome_assembly_table t3 on t1.query_assembly_id=t3.assembly_id
+        inner join genome_assembly_table2taxon_id t4 on t1.ref_assembly_id=t4.assembly_id
+        inner join genome_assembly_table2taxon_id t5 on t1.query_assembly_id=t5.assembly_id
+        where t1.taxon_id={taxon_id} 
+        and t4.taxon_id={taxon_id}
+        and t5.taxon_id={taxon_id};
+          '''
+        #print(sql)
+        return pandas.read_sql(sql, self.conn)
         
         
     def VF_cluster_genome_counts(self,
                                  taxon_id, 
                                  min_identity=90, 
-                                 min_coverage=80):
+                                 min_coverage=60,
+                                 search_tools=["ssearch","tfastx"],
+                                 matrices=["BL50"]):
         '''
         Get number of hits for each cluster in each genome assembly
         Only possible for ssearch and not tfastx (would need to check position)
         '''
         
+        tool_filter = '","'.join(search_tools)
+        matrices_filter = '","'.join(matrices)
         # get cluster frequency
         sql_VF_freq = f'''select t6.cluster_name, t5.accession, count(*) as n from homology_search t1 
                     inner join homology_search_db_xrefs t2 on t1.search_tool_id=t2.id 
@@ -530,13 +719,52 @@ class DB:
                     and t7.species_taxon_id={taxon_id}
                     and percent_identity>={min_identity}
                     and uniparc_seq_coverage>={min_coverage}
-                    and t2.name in("ssearch") 
-                    and t3.name="BL50" 
+                    and t2.name in ("{tool_filter}") 
+                    and t3.name in ("{matrices_filter}")
                     and t4.name="no_filtering_lowcomplexity"
                     group by t1.assembly_id,t6.cluster_id;'''
         
         return self.server.execute(sql_VF_freq,).fetchall()
         
+
+    def VF_cluster_genome_2mmseqs(self,
+                                  taxon_id, 
+                                  min_identity=90, 
+                                  min_coverage=60,
+                                  search_tools=["ssearch"],
+                                  matrices=["BL50"]):
+        '''
+        Get number of hits for each cluster in each genome assembly
+        Only possible for ssearch and not tfastx (would need to check position)
+        '''
+        
+        tool_filter = '","'.join(search_tools)
+        matrices_filter = '","'.join(matrices)
+        # get cluster frequency
+        sql_VF_freq = f'''select distinct t5.accession,t10.cluster_id  as n from homology_search t1 
+                    inner join homology_search_db_xrefs t2 on t1.search_tool_id=t2.id 
+                    inner join homology_search_db_xrefs t3 on t1.substitution_matrix_id=t3.id 
+                    inner join homology_search_db_xrefs t4 on t1.filtering_id=t4.id 
+                    inner join genome_assembly_table t5 on t1.assembly_id=t5.assembly_id 
+                    inner join {CLUSTERING_TABLE} t6 on t1.uniparc_id=t6.uniparc_id 
+                    inner join {CLUSTERING2SPECIES_TABLE} t7 on t6.cluster_id=t7.cluster_id
+                    inner join genome_assembly_table2taxon_id t8 on t5.assembly_id=t8.assembly_id
+                    inner join circos_genome2proteins t9 on t1.hit_accession=t9.accession
+                    inner join circos_proteins2mmseqs t10 on t9.protein_id=t10.protein_id 
+                    where t8.taxon_id={taxon_id}
+                    and t10.taxon_id={taxon_id}
+                    and t7.species_taxon_id={taxon_id}
+                    and percent_identity>={min_identity}
+                    and uniparc_seq_coverage>={min_coverage}
+                    and t2.name in ("{tool_filter}") 
+                    and t3.name in ("{matrices_filter}")
+                    and t4.name="no_filtering_lowcomplexity"'''
+        
+        print(sql)
+        
+        return self.server.execute(sql_VF_freq,).fetchall()
+        
+
 
     def get_species_name_from_taxid(self,taxon_id):
         
@@ -797,12 +1025,14 @@ class DB:
         if not percentages:
             return taxid2core_VF_median, taxid2pan_VF_median
         else:
-            
+            print("taxon-id", taxid)
             taxid2proportion_core = {}
             taxid2proportion_pan = {} 
             for taxid in taxid_list:
                 combined = (taxid2core_VF_median[taxid] + taxid2pan_VF_median[taxid])
-                #print("combined",taxid, combined)
+                print("taxid",taxid,"n combined", combined)
+                print("core", taxid2core_VF_median[taxid])
+                print("pan", taxid2pan_VF_median[taxid])
                 taxid2proportion_core[taxid] = round((taxid2core_VF_median[taxid] / combined) * 100, 2)
                 taxid2proportion_pan[taxid] = round((taxid2pan_VF_median[taxid] / combined) * 100, 2)
             return taxid2proportion_core, taxid2proportion_pan
@@ -978,8 +1208,22 @@ fill_color         = lgreen
     
         return self.server.execute(sql,).fetchall()[0][0]
 
-
-    def get_genome_distance(self, assembly_id, distance="AAI"):
+    def get_genome_distance(self, taxon_id, distance='AAI_median'):
+        
+        sql = f'''
+            select t3.accession,t4.accession, distance from genome_assembly_distance t1 
+            inner join terms t2 on t1.term_id=t2.term_id 
+            inner join genome_assembly_table t3 on t1.assembly_b=t3.assembly_id 
+            inner join genome_assembly_table t4 on t1.assembly_a=t4.assembly_id 
+            inner join genome_assembly_table2taxon_id t5 on t3.assembly_id=t5.assembly_id
+            inner join genome_assembly_table2taxon_id t6 on t4.assembly_id=t6.assembly_id
+            where t5.taxon_id={taxon_id}
+            and t6.taxon_id={taxon_id} 
+            and term_name="{distance}"
+        '''
+        return pandas.read_sql(sql, self.conn)
+        
+    def get_accession2genome_distance(self, assembly_id, distance="AAI"):
         
         sql = f'''select accession,distance from genome_assembly_distance t1 
                  inner join terms t2 on t1.term_id=t2.term_id 
