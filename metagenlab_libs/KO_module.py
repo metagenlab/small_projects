@@ -62,7 +62,7 @@ class LeftParToken(Token):
     def __str__(self):
         return "LeftPar"
 
-class RightPar(Token):
+class RightParToken(Token):
     def __str__(self):
         return "RightPar"
 
@@ -143,10 +143,13 @@ class Tokenizer:
             elif char == "+":
                 self.i += 1
                 return ComplexToken()
+            elif char == ",":
+                self.i += 1
+                return OrToken()
             elif char == "-":
                 return self.tokenize_minus()
             elif char == "K":
                 return self.tokenize_ko()
             else:
-                raise Exception("Error tokenizing")
+                raise Exception(f"Error tokenizing at position {self.i}({self.module_def[self.i]})")
         raise StopIteration
