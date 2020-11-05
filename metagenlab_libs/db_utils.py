@@ -256,8 +256,8 @@ class DB:
     # NOTE: need to check which indices are necessary to add to this table
     def load_cog_hits(self, data):
         sql = (
-            "CREATE TABLE cog_hits (hsh INTEGER, cog_id INT, evalue FLOAT, "
-            " FOREIGN KEY(cog_id) REFERENCES cog_names(cog_id)); "
+            "CREATE TABLE cog_hits (hsh INTEGER, cog_id INT, evalue FLOAT);"
+            # " FOREIGN KEY(cog_id) REFERENCES cog_names(cog_id)); "
         )
         self.server.adaptor.execute(sql,)
 
@@ -310,11 +310,24 @@ class DB:
         sql = "CREATE INDEX kpd_i ON ko_pathway_def(pathway_id);"
         self.server.adaptor.execute(sql)
 
+
+    def load_ko_module_classes(self, data):
+        sql = (
+            "CREATE TABLE ko_class( "
+            "class_id INTEGER, descr TEXT, PRIMARY KEY(class_id));"
+        )
+        self.server.adaptor.execute(sql)
+        self.load_data_into_table("ko_class", data)
+        sql = "CREATE INDEX kc_i ON ko_class(class_id);"
+        self.server.adaptor.execute(sql)
+
+
     def load_ko_module(self, data):
         sql = (
             "CREATE TABLE ko_module_def ("
-            "module_id INTEGER, desc TEXT, definition TEXT, "
-            "PRIMARY KEY(module_id));"
+            "module_id INTEGER, desc TEXT, definition TEXT, class INT, subclass INT, "
+            "PRIMARY KEY(module_id), FOREIGN KEY(class) REFERENCES ko_class(class_id), "
+            "FOREIGN KEY(subclass) REFERENCES ko_class(class_id));"
         )
         self.server.adaptor.execute(sql)
         self.load_data_into_table("ko_module_def", data)
@@ -1273,7 +1286,7 @@ class DB:
     # Maybe return different instance of a subclass depending on the type
     # of database? Would allow to avoid code duplication if several database
     # types are to be included.
-    def load_db(params):
+    def load_db(db_file, params):
         sqlpsw = params.get("chlamdb.db_psswd", "")
         db_type = params["chlamdb.db_type"]
         db_name = params["chlamdb.db_name"]
@@ -1283,7 +1296,7 @@ class DB:
                                                   user="root",
                                                   passwd = sqlpsw, 
                                                   host = "127.0.0.1", 
-                                                  db=db_name, 
+                                                  db=db_file, 
                                                   charset='utf8',
                                                   use_unicode=True)
         else:
@@ -1291,13 +1304,9 @@ class DB:
                                                   user="root",
                                                   passwd = sqlpsw, 
                                                   host = "127.0.0.1",
-                                                  db=f"{db_name}")
+                                                  db=db_file)
         return DB(server, db_name)
 
-
-    def load_db_from_name(db_name, params = None):
-        if params == None:
-            params = {"chlamdb.db_name": db_name}
-        else:
-            params["chlamdb.db_name"] = db_name
+    def load_db_from_name(db_name, db_type = "sqlite"):
+        params = {"chlamdb.db_type" : db_type, "chlamdb.db_name" : db_name}
         return DB.load_db(params)

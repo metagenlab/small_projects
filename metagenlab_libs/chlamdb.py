@@ -10,6 +10,11 @@
 # and enters them in the database.
 # Same with COGs.
 #
+###############################################################################
+# NOTE: for this script to work, you either need to disable multithreading by 
+# setting N_THREAD to 1 or you need to patch REST.py to use urllib3 (thread safe).
+###############################################################################
+#
 # Bastian Marquis (bastian.marquis@protonmail.com)
 # Date: 29.10.2020
 
@@ -23,10 +28,19 @@ import threading
 from Bio.KEGG import REST
 from Bio.KEGG import Gene
 
+
 DEFAULT_PSSWD = ""
 DEFAULT_TYPE = "sqlite"
 DEFAULT_DB_NAME = "George"
 
+# from REST documentation, can get a max of 10 queries 
+# in kegg_get
+MAX_N_QUERIES = 10
+# number of threads that will be used simultaneously
+# to download the ko genes. 5 seems a good compromise
+# between being blacklisted and speed
+DEFAULT_N_THREADS = 5
+DEFAULT_KO_DIR = "tmp"
 
 def create_data_table(db):
     entry_list = [
@@ -101,7 +115,7 @@ def setup_biodb(kwargs):
     chlamdb_args = {"chlamdb.db_type": db_type,
             "chlamdb.db_name": db_name,
             "chlamdb.db_psswd": sqlpsw}
-    db = db_utils.DB.load_db(chlamdb_args)
+    db = db_utils.DB.load_db(db_name, chlamdb_args)
     db.create_biosql_database(chlamdb_args)
     db.commit()
     return db
@@ -125,14 +139,20 @@ class Record(object):
 
 
 class Module(object):
-    def __init__(self, entry, descr):
-        self.entry = entry
-        self.descr = descr
+    def __init__(self):
+        self.entry = None
+        self.descr = None
         self.classes = []
         self.definition = ""
 
     def simplified_entry(self):
         return int(self.entry[len("M"):])
+
+    def sub_category(self):
+        return self.classes[-1]
+
+    def category(self):
+        return self.classes[-2]
 
     def __str__(self):
         return self.entry + ": " + self.descr
@@ -142,19 +162,6 @@ class Module(object):
 
     def __eq__(self, other):
         return self.entry == other.entry
-
-    def parse(self, handle):
-        for line in handle:
-            if line[:3] == "///":
-                return
-            if line[:12] != "            ":
-                keyword = line[:12]
-            data = line[12:].strip()
-            if keyword == "CLASS       ":
-                tokens = data.split(";")
-                self.classes = [token.strip() for token in tokens]
-            if keyword == "DEFINITION  ":
-                self.definition = data
 
 
 class Pathway(object):
@@ -173,6 +180,27 @@ class Pathway(object):
 
     def __str__(self):
         return self.entry + ": " + self.descr
+
+
+def parse_module(handle):
+    module = Module()
+    for line in handle:
+        if line[:3] == "///":
+            yield module
+            module = Module()
+            continue
+        if line[:12] != "            ":
+            keyword = line[:12].strip()
+        data = line[12:].strip()
+        if keyword == "ENTRY":
+            module.entry = data.split()[0]
+        if keyword == "NAME":
+            module.descr = data
+        if keyword == "CLASS":
+            tokens = data.split(";")
+            module.classes = [token.strip() for token in tokens]
+        if keyword == "DEFINITION":
+            module.definition = data
 
 
 def parse_gene(handle):
@@ -195,36 +223,138 @@ def parse_gene(handle):
             record.definition = data
         elif keyword == "MODULE      ":
             module, *descr_tokens = data.split()
-            descr = " ".join(descr_tokens)
-            record.modules.append(Module(module, descr))
+            record.modules.append(module)
         elif keyword == "PATHWAY     ":
             pathway, *descr_tokens = data.split()
             descr = (" ".join(descr_tokens)).strip()
             record.pathways.append(Pathway(pathway, descr))
 
 
-def load_KO_references(db, params):
+def download_ko_genes(gene_queue, tmp_dir):
+    done = False
+    while not done:
+        queries = []
+        try:
+            # non-blocking call, will raise an Empty exception
+            # once there is no more elements to download
+            for i in range(MAX_N_QUERIES):
+                gene = gene_queue.get(False)
+                queries.append(gene)
+                size = gene_queue.qsize()
+                if size % 100 == 0:
+                    print(size)
+        except Exception as e:
+            if len(queries) == 0:
+                break
+            done = True
+
+        try:
+            buff = REST.kegg_get(queries)
+            buff.reconfigure(encoding="Latin-1")
+            text_version = buff.read()
+            output_file = open(tmp_dir+"/"+queries[0], "w")
+            output_file.write(text_version)
+            output_file.close()
+        except Exception as e:
+            print(e)
+            print(f"ERROR: Could not download one of the following kegg ")
+            print(",".join(queries))
+
+
+def download_ko_files(ko_dir, n_threads=DEFAULT_N_THREADS):
     ko_string = REST.kegg_list("KO")
-    ko_codes = []
+    already_downloaded = []
+    if not os.path.exists(ko_dir):
+        os.mkdir(ko_dir)
+    else:
+        for ko in os.listdir(ko_dir):
+            ko_file = open(ko_dir+"/"+ko, "r")
+            for gene in parse_gene(ko_file):
+                already_downloaded.append("ko:"+gene.entry)
+
+    if len(already_downloaded)>0:
+        print(f"Already {len(already_downloaded)} downloaded")
+
+    gene_queue = queue.Queue()
+    gene_list = []
     for line in ko_string:
-        ko_codes.append(line.split()[0])
+        gene = line.split()[0]
+        if gene in already_downloaded:
+            continue
+        gene_queue.put(gene)
+        gene_list.append(gene)
 
+    if len(gene_list) > 0:
+        print(f"Preparing to download : {len(gene_list)}")
+    else:
+        print("Everything already downloaded")
+        return
+
+    threads = []
+    for i in range(n_threads):
+        thread = threading.Thread(target=download_ko_genes, args=(gene_queue, ko_dir))
+        threads.append(thread)
+        thread.start()
+
+    # wait for completion
+    for thread in threads:
+        thread.join()
+
+def chunk_modules(modules, size=MAX_N_QUERIES):
+    curr = []
+    for i, module in enumerate(modules):
+        curr.append(module)
+        if i % MAX_N_QUERIES == 0:
+            yield curr
+            curr = []
+    if len(curr)>0:
+        yield curr
+
+def load_KO_references(db, params, ko_dir=DEFAULT_KO_DIR):
     genes = []
-    for i, ko_code in enumerate(ko_codes):
-        buf = REST.kegg_get(ko_code)
-        for gene in parse_gene(buf):
+
+    for ko in os.listdir(ko_dir):
+        ko_file = open(ko_dir+"/"+ko, "r")
+        for gene in parse_gene(ko_file):
             genes.append(gene)
-        if i==15:
-            # test version: do not download all keggs
-            break
 
+    # get only the module present in the genes
     modules_set = {module for gene in genes for module in gene.modules}
-    pathway_set = {pathway for gene in genes for pathway in gene.pathways}
-    for module in modules_set:
-        mod_data = REST.kegg_get(module.entry)
-        module.parse(mod_data)
+    hsh_modules = {}
+    print("Downloading module data")
+    for i, module_list in enumerate(chunk_modules(modules_set)):
+        if i %10==0:
+            print(i*MAX_N_QUERIES)
+        mod_data = REST.kegg_get(module_list)
+        for module in parse_module(mod_data):
+            hsh_modules[module.entry] = module
+    print("Done")
 
-    db.load_ko_module([(m.simplified_entry(), m.descr, m.definition) for m in modules_set])
+    pathway_set = set()
+    category_set = set()
+    for entry, module in hsh_modules.items():
+        if len(module.classes) > 0:
+            category_set.add(module.sub_category())
+            category_set.add(module.category())
+    for gene in genes:
+        for pathway in gene.pathways:
+            pathway_set.add(pathway)
+
+    # really ugly, but spares some web requests
+    module_classes = []
+    hsh_class_to_id = {}
+    for cat_id, cat in enumerate(category_set):
+        module_classes.append( (cat_id, cat) )
+        hsh_class_to_id[cat] = cat_id
+    for entry, module in hsh_modules.items():
+        cat_id = hsh_class_to_id[module.category()]
+        subcat_id = hsh_class_to_id[module.sub_category()]
+        module.cat_id = cat_id
+        module.subcat_id = subcat_id
+
+    db.load_ko_module_classes(module_classes)
+    db.load_ko_module([(m.simplified_entry(), m.descr, m.definition, m.cat_id, m.subcat_id)
+        for m in hsh_modules.values()])
     db.load_ko_pathway([(p.simplified_entry(), p.descr) for p in pathway_set])
     db.load_ko_def([(gene.simplified_entry(), gene.definition) for gene in genes])
 
@@ -233,7 +363,8 @@ def load_KO_references(db, params):
     for gene in genes:
         simp = gene.simplified_entry()
         ko_to_path.extend((simp, path.simplified_entry()) for path in gene.pathways)
-        ko_to_module.extend((simp, mod.simplified_entry()) for mod in gene.modules)
+        ko_to_module.extend((simp, hsh_modules[mod].simplified_entry())
+                for mod in gene.modules)
     db.load_ko_to_pathway(ko_to_path)
     db.load_ko_to_module(ko_to_module)
     db.commit()
@@ -295,7 +426,7 @@ parser.add_argument("--cog_dir", nargs="?", default="./",
         help="directory where the cog definitions files are (default current directory)")
 
 parser.add_argument("--load_kegg", action="store_true",
-        help="load kegg definitions (default yes)")
+        help="load kegg definitions (default no, must specify ko genes dir)")
 
 parser.add_argument("--db_type", nargs="?", default=DEFAULT_TYPE,
         help="database type (either sqlite or mysql)")
@@ -303,11 +434,38 @@ parser.add_argument("--db_type", nargs="?", default=DEFAULT_TYPE,
 parser.add_argument("--db_psswd", nargs="+", default=DEFAULT_PSSWD,
         help="set db password (default none)")
 
+parser.add_argument("--download_ko_files", action="store_true",
+        help="download ko file definition, necessary to do this before --load-kegg")
+
+parser.add_argument("--ko_dir", nargs="?", default=DEFAULT_KO_DIR,
+        help=f"ko directory, defaults to {DEFAULT_KO_DIR}")
+
+parser.add_argument("--skip_biodb", action="store_true", default=False,
+        help="skip setting up biodb, might be useful if using a pre-existing db")
+
 args = vars(parser.parse_args())
 
-print("Setting up the biosql schema")
-db = setup_biodb(args)
-create_data_table(db)
+if args.get("download_ko_files", False):
+    print("Starting to download ko files to tmp")
+    print("Will do this first as this tend to crash")
+    print("Just insist until completion")
+    ko_dir = args.get("ko_dir")
+    download_ko_files(ko_dir)
+
+db = None
+if not args.get("skip_biodb"):
+    print("Setting up the biosql schema")
+    db = setup_biodb(args)
+    create_data_table(db)
+
+if db == None:
+    db_name = args.get("db_name", DEFAULT_DB_NAME)
+    db_type = args.get("db_type", DEFAULT_TYPE)
+    db_psswd = args.get("db_psswd", DEFAULT_PSSWD)
+    chlamdb_args = { "chlamdb.db_type" : db_type,
+            "chlamdb.db_name" : db_name,
+            "chlamdb.db_psswd" : db_psswd}
+    db = db_utils.DB.load_db(db_name, chlamdb_args)
 
 if args.get("load_cog", False):
     print("Loading COG tables")
@@ -315,4 +473,5 @@ if args.get("load_cog", False):
 
 if args.get("load_kegg", False):
     print("Loading KEGG tables")
-    genes = load_KO_references(db, args)
+    ko_dir = args.get("ko_dir", DEFAULT_KO_DIR)
+    genes = load_KO_references(db, args, ko_dir)
