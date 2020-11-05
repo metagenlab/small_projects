@@ -206,7 +206,6 @@ class ModuleParser:
             token = self.curr_token
             self.curr_token = None
             return token
-
         try:
             next_token = next(self.token_iter)
             return next_token

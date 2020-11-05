@@ -5,9 +5,22 @@ import os, sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import KO_module
+import db_utils
 
 
-test_string = "(K01965+K01966,K11263+(K18472,K19312+K22568),K01964+K15036+K15037) K05606 (K01847,K01848+K01849)"
+# to be manually set for tests
+database_settings = {}
 
-mod = KO_module.ModuleParser(test_string)
-mod.parse()
+
+params = {"chlamdb.db_name": "George", "chlamdb.db_type": "sqlite", "chlamdb.db_psswd" : ""}
+database = db_utils.DB.load_db("../George", params)
+
+definitions = database.get_all_modules_definition()
+
+for definition in definitions:
+    try:
+        mod = KO_module.ModuleParser(definition)
+        mod.parse()
+    except Exception as e:
+        print(str(e))
+        print("Failed on :" + definition)

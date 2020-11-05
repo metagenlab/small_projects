@@ -388,6 +388,10 @@ class DB:
         )
         self.server.adaptor.execute(sql)
 
+    def get_all_modules_definition(self):
+        query = "SELECT definition FROM ko_module_def;"
+        results = self.server.adaptor.execute_and_fetchall(query)
+        return [line[0] for line in results]
 
     def get_ko_total_count(self, ko_ids):
         entries = ",".join("?" for i in ko_ids)
