@@ -8,7 +8,6 @@ import KO_module
 
 
 test_string = "(K01965+K01966,K11263+(K18472,K19312+K22568),K01964+K15036+K15037) K05606 (K01847,K01848+K01849)"
-foo = KO_module.Tokenizer(test_string)
 
-for token in foo:
-    print(token)
+mod = KO_module.ModuleParser(test_string)
+mod.parse()

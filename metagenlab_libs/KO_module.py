@@ -1,7 +1,7 @@
 
 
 class KoModuleTree:
-    def KoModuleTree(self, root):
+    def __init__(self, root):
         self.root = root
 
     def tokenize():
@@ -18,10 +18,36 @@ class KoModuleTree:
     def get_ko_ids(self):
         return self.get_ko_ids()
 
+class Complex:
+    def __init__(self, list_comp):
+        self.list_comp = list_comp
+
+    def get_n_missing(self, kos):
+        return sum(node.get_n_missing() for node in self.list_comp)
+
+    def get_ko_ids(self):
+        return (node.get_ko_ids() for node in list_comp)
+
+class Component:
+    def __init__(self, ko_id):
+        self.ko_id = ko_id
+
+    def get_n_missing(self, kos):
+        if ko_id not in kos:
+            return 1
+        else:
+            return 0
+
+    def get_ko_ids(self):
+        return self.ko_id
+
+class OptionalComponent(Component):
+    def get_n_missing(self, kos):
+        return 0
 
 # May need to put those in a different file
 class KoAnd:
-    def KoAnd(self, list_and):
+    def __init__(self, list_and):
         self.list_and = list_and
 
     def get_n_missing(self, kos):
@@ -34,7 +60,7 @@ class KoAnd:
         return (node.get_ko_ids() for node in self.list_and)
 
 class KoOr:
-    def KoOr(self, list_or):
+    def __init__(self, list_or):
         self.list_or = list_or
 
     def get_n_missing(kos):
@@ -44,7 +70,7 @@ class KoOr:
         return (node.get_ko_ids() for node in self.list_and)
 
 class KoNode:
-    def KoNode(self, node_id):
+    def __init__(self, node_id):
         self.node_id = node_id
 
     def get_n_missing(self, kos):
@@ -153,3 +179,135 @@ class Tokenizer:
             else:
                 raise Exception(f"Error tokenizing at position {self.i}({self.module_def[self.i]})")
         raise StopIteration
+
+
+class ModuleParser:
+
+    def __init__(self, module_def):
+        self.module_def = module_def
+        tokenizer = Tokenizer(module_def)
+        self.token_iter = iter(tokenizer)
+        self.curr_token = None
+
+    def next_token(self):
+        if self.curr_token != None:
+            token = self.curr_token
+            self.curr_token = None
+            return token
+
+        try:
+            next_token = next(self.token_iter)
+            return next_token
+        except StopIteration as e:
+            return None
+
+    def parse_parentheses(self):
+        subtree = self.parse()
+        next_token = self.next_token()
+        if next_token == None or not isinstance(next_token, RightParToken):
+            raise Exception("Unexpected end of expression (unbalanced parentheses) " + str(next_token))
+        return subtree
+
+    def parse_complex(self, first_node):
+        pass
+
+    def parse_and(self, first_node):
+        ko_and = KoAnd([first_node])
+
+        # can then only be complexes, other kos or parentheses
+        n = self.next_token()
+        while True:
+            if n==None:
+                raise Exception("Unexpected end of expression")
+            elif isinstance(n, LeftParToken):
+                expr = self.parse()
+            elif isinstance(n, Ko):
+                expr = KoNode(n.ko_id)
+            else:
+                raise Exception("Unexpected token (a.k.a what the fuck is this doing here)")
+
+            n = self.next_token()
+            if n==None:
+                ko_and.list_and.append(expr)
+                return ko_and
+            elif isinstance(n, AndToken):
+                ko_and.list_and.append(expr)
+            elif isinstance(n, ComplexToken):
+                ko_and.list_and.append(self.parse_complex(expr))
+            else:
+                raise Exception("Unexpected token (a.k.a what the fuck is this doing here)")
+            n = self.next_token
+
+    def parse_or(self, first_node):
+        ko_or = KoOr([first_node])
+
+        # can then only be complexes, other kos or parentheses
+        n = self.next_token()
+        while True:
+            if n==None:
+                raise Exception("Unexpected end of expression")
+            elif isinstance(n, LeftParToken):
+                expr = self.parse()
+            elif isinstance(n, Ko):
+                expr = KoNode(n.ko_id)
+            else:
+                raise Exception("Unexpected token (a.k.a what the fuck is this doing here)")
+
+            n = self.next_token()
+            if n==None:
+                ko_or.list_and.append(expr)
+                return ko_or
+            elif isinstance(n, OrToken):
+                ko_or.list_or.append(expr)
+            elif isinstance(n, ComplexToken):
+                ko_or.list_or.append(self.parse_complex(expr))
+            else:
+                raise Exception("Unexpected token (a.k.a what the fuck is this doing here)")
+            n = self.next_token()
+
+    def parse_complex(self, first_node):
+        ko_complex = Complex([first_node])
+
+        # can then only be complexes, other kos or parentheses
+        n = self.next_token()
+        while True:
+            if n==None:
+                raise Exception("Unexpected end of expression")
+            elif isinstance(n, LeftParToken):
+                expr = self.parse()
+            elif isinstance(n, Ko):
+                expr = KoNode(n.ko_id)
+            else:
+                raise Exception("Unexpected token (a.k.a what the fuck is this doing here)")
+
+            n = self.next_token()
+            if n==None:
+                ko_or.list_and.append(expr)
+                return ko_or
+            elif isinstance(n, ComplexToken):
+                ko_complex.list_comp.append(expr)
+            else:
+                self.curr_token = n
+                ko_complex.list_comp.append(expr)
+                return ko_complex
+            n = self.next_token()
+
+    def parse(self):
+        curr_token = next(self.token_iter)
+
+        if isinstance(curr_token, LeftParToken):
+            return self.parse_parentheses()
+        elif isinstance(curr_token, Ko):
+            n = self.next_token()
+            if n==None:
+                return KoNode(curr_token.ko_id)
+            elif isinstance(n, AndToken):
+                return self.parse_and(KoNode(curr_token.ko_id))
+            elif isinstance(n, OrToken):
+                return self.parse_or(KoNode(curr_token.ko_id))
+            elif isinstance(n, ComplexToken):
+                return self.parse_complex(Component(curr_token.ko_id))
+            else:
+                raise Exception("Should a priori not happen : "+ str(n))
+        else:
+            raise Exception("Unexpected token : " + curr_token)
