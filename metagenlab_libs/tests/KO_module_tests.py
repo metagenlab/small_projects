@@ -34,6 +34,7 @@ for KO_id, definition in definitions:
 if not passed_parsing:
     print("Could not parse some modules def in the database")
     print("Stopped testing here. Please fix parsing.")
+    sys.exit(1)
 
 def test_expr(expression, expected_result, kos):
     parser = KO_module.ModuleParser(expression)
@@ -62,9 +63,27 @@ test_expr("K00001+K00002", 1, {2})
 test_expr("K00001+K00002", 1, {1})
 test_expr("K00001+K00002", 2, {})
 
+test_expr("K00001-K00002", 0, {1, 2})
+test_expr("K00001-K00002", 1, {2})
+test_expr("K00001-K00002", 0, {1})
+test_expr("K00001-K00002", 1, {})
+
 # complex with optional component
 test_expr("K00001+K00002-K00003", 0, {1, 2})
 test_expr("K00001+K00002-K00003", 0, {1, 2, 3})
+
+# complex with two possible subunits
+test_expr("K00001+(K00004,K00005)-K00003", 2, {})
+test_expr("K00001+(K00004,K00005)-K00003", 1, {1, 3})
+test_expr("K00001+(K00004,K00005)-K00003", 0, {1, 3, 4})
+test_expr("K00001+(K00004,K00005)-K00003", 0, {1, 3, 5})
+
+# complex with two possible subunits
+test_expr("(K00004,K00005)+K00003", 0, {4, 3})
+test_expr("(K00004,K00005)+K00003", 0, {5, 3})
+test_expr("(K00004,K00005)+K00003", 1, {3})
+test_expr("(K00004,K00005)+K00003", 1, {4, 5})
+test_expr("(K00004,K00005)+K00003", 2, {})
 
 # bizarre expression
 test_expr("K00001 K00002 -K00003", 0, {1, 2})
@@ -85,3 +104,11 @@ test_expr("(K00001,K00002) K00003", 0, {1, 3})
 test_expr("(K00001,K00002) K00003", 1, {1, 2})
 test_expr("(K00001,K00002) K00003", 1, {3})
 test_expr("(K00001,K00002) K00003", 2, {})
+
+# or / and + parentheses combination
+test_expr("K00003 (K00001,K00002)", 0, {1, 2, 3})
+test_expr("K00003 (K00001,K00002)", 0, {2, 3})
+test_expr("K00003 (K00001,K00002)", 0, {1, 3})
+test_expr("K00003 (K00001,K00002)", 1, {1})
+test_expr("K00003 (K00001,K00002)", 1, {1, 2})
+test_expr("K00003 (K00001,K00002)", 2, {})

@@ -12,29 +12,20 @@
 # Date: 05.11.2020
 
 class Complex:
-    def __init__(self, list_comp):
-        self.list_comp = list_comp
+    def __init__(self, left, right):
+        self.right = left
+        self.left = right
 
     def get_n_missing(self, kos):
-        return sum(node.get_n_missing(kos) for node in self.list_comp)
+        return self.right.get_n_missing(kos) + self.left.get_n_missing(kos)
 
     def get_ko_ids(self):
         return (node.get_ko_ids() for node in list_comp)
 
-class Component:
-    def __init__(self, ko_id):
-        self.ko_id = ko_id
-
-    def get_n_missing(self, kos):
-        if ko_id not in kos:
-            return 1
-        else:
-            return 0
-
-    def get_ko_ids(self):
-        return self.ko_id
-
 class OptionalSubunit(Complex):
+    def __init__(self, expr):
+        self.expr = expr
+
     def get_n_missing(self, kos):
         return 0
 
@@ -216,18 +207,21 @@ class ModuleParser:
         else:
             raise Exception("Unexpected token: "+str(n))
 
+    def parse_optional(self, left_node):
+        right_node = self.parse_complex()
+        if isinstance(right_node, ComplexToken):
+            return Complex(left_node, Complex(OptionalSubunit(right_node.left), right_node.right))
+        else:
+            return Complex(left_node, OptionalSubunit(right_node))
+
     def parse_complex(self):
         node = self.parse_leaf()
         n = self.next_token()
 
         if isinstance(n, ComplexToken):
-            compl = Complex([node])
-            compl.list_comp.append(self.parse())
-            return compl
+            return Complex(node, self.parse_complex())
         elif isinstance(n, OptionalComplexComponent):
-            optional_compl = OptionalSubunit([node])
-            optional_compl.list_comp.append(self.parse())
-            return optional_compl
+            return self.parse_optional(node)
         else:
             self.curr_token = n
             return node
