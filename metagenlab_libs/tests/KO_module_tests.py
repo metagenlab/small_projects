@@ -62,6 +62,22 @@ test_expr("K00001+K00002", 1, {2})
 test_expr("K00001+K00002", 1, {1})
 test_expr("K00001+K00002", 2, {})
 
+# complex with optional component
+test_expr("K00001+K00002-K00003", 0, {1, 2})
+test_expr("K00001+K00002-K00003", 0, {1, 2, 3})
+
+# bizarre expression
+test_expr("K00001 K00002 -K00003", 0, {1, 2})
+test_expr("K00001 K00002 -K00003", 0, {1, 2, 3})
+test_expr("K00001 K00002 -K00003", 1, {1, 3})
+test_expr("K00001 K00002 -K00003", 1, {2, 3})
+test_expr("K00001 K00002 -K00003", 2, {})
+
+# another bizarre expression
+test_expr("K00001 -- -K00003", 1, {})
+test_expr("K00001 -- -K00003", 0, {1})
+test_expr("K00001 -- -K00003", 0, {1, 3})
+
 # or / and + parentheses combination
 test_expr("(K00001,K00002) K00003", 0, {1, 2, 3})
 test_expr("(K00001,K00002) K00003", 0, {2, 3})
