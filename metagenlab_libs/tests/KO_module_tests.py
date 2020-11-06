@@ -44,6 +44,7 @@ def test_expr(expression, expected_result, kos):
         print("Passed: ", expression)
     else:
         print("Failed: ", expression, " expected ", expected_result, " got ", n_missing)
+        print("Tree: ", tree)
 
 # simple and
 test_expr("K00001 K00002", 0, {1, 2})
@@ -71,6 +72,11 @@ test_expr("K00001-K00002", 1, {})
 # complex with optional component
 test_expr("K00001+K00002-K00003", 0, {1, 2})
 test_expr("K00001+K00002-K00003", 0, {1, 2, 3})
+test_expr("K00001-K00002-K00003+K00004", 0, {1, 2, 3, 4}) # OK
+test_expr("K00001-K00002-K00003+K00004", 0, {1, 3, 4}) # failed
+test_expr("K00001-K00002-K00003+K00004", 0, {1, 2, 4}) # OK
+test_expr("K00001-K00002-K00003+K00004", 1, {1, 2, 3}) # failed
+test_expr("K00001-K00002-K00003+K00004", 1, {2, 3, 4}) # OK
 
 # complex with two possible subunits
 test_expr("K00001+(K00004,K00005)-K00003", 2, {})

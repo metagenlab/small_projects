@@ -13,8 +13,11 @@
 
 class Complex:
     def __init__(self, left, right):
-        self.right = left
-        self.left = right
+        self.right = right
+        self.left = left
+
+    def __str__(self):
+        return "Complex(" + str(self.left) + ", " + str(self.right) + ")"
 
     def get_n_missing(self, kos):
         return self.right.get_n_missing(kos) + self.left.get_n_missing(kos)
@@ -25,6 +28,9 @@ class Complex:
 class OptionalSubunit(Complex):
     def __init__(self, expr):
         self.expr = expr
+
+    def __str__(self):
+        return "Optional(" + str(self.expr) + ")"
 
     def get_n_missing(self, kos):
         return 0
@@ -53,6 +59,9 @@ class KoOr:
 class KoNode:
     def __init__(self, node_id):
         self.node_id = node_id
+
+    def __str__(self):
+        return str(self.node_id)
 
     def get_n_missing(self, kos):
         if self.node_id in kos:
@@ -209,8 +218,9 @@ class ModuleParser:
 
     def parse_optional(self, left_node):
         right_node = self.parse_complex()
-        if isinstance(right_node, ComplexToken):
-            return Complex(left_node, Complex(OptionalSubunit(right_node.left), right_node.right))
+        if isinstance(right_node, Complex):
+            transformed = Complex(OptionalSubunit(right_node.left), right_node.right)
+            return Complex(left_node, transformed)
         else:
             return Complex(left_node, OptionalSubunit(right_node))
 
