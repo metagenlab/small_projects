@@ -415,6 +415,30 @@ class DB:
         return df.groupby("KO").count()
 
 
+    def get_module_categories(self):
+        query = (
+            "SELECT descr "
+            "FROM ko_module_def "
+            "INNER JOIN ko_class ON class_id = class "
+            "WHERE is_signature_module = 0 "
+            "GROUP BY (descr);"
+        )
+        results = self.server.adaptor.execute_and_fetchall(query)
+        return [line[0] for line in results]
+
+
+    def get_module_sub_categories(self):
+        query = (
+            "SELECT descr "
+            "FROM ko_module_def "
+            "INNER JOIN ko_class ON class_id = subclass "
+            "WHERE is_signature_module = 0 "
+            "GROUP BY (descr);"
+        )
+        results = self.server.adaptor.execute_and_fetchall(query)
+        return [line[0] for line in results]
+
+
     def to_hsh(results, val_range, has_multiple=False):
         hsh = {}
         for line in results:
@@ -1320,4 +1344,4 @@ class DB:
 
     def load_db_from_name(db_name, db_type = "sqlite"):
         params = {"chlamdb.db_type" : db_type, "chlamdb.db_name" : db_name}
-        return DB.load_db(params)
+        return DB.load_db(db_name, params)

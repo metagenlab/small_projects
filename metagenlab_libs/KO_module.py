@@ -24,9 +24,6 @@ class Complex:
     def get_n_missing(self, kos):
         return self.right.get_n_missing(kos) + self.left.get_n_missing(kos)
 
-    def get_ko_ids(self):
-        return (node.get_ko_ids() for node in list_comp)
-
 class OptionalSubunit(Complex):
     def __init__(self, expr):
         self.expr = expr
@@ -45,18 +42,12 @@ class KoAnd:
     def get_n_missing(self, kos):
         return sum(node.get_n_missing(kos) for node in self.list_and)
 
-    def get_ko_ids(self):
-        return (node.get_ko_ids() for node in self.list_and)
-
 class KoOr:
     def __init__(self, list_or):
         self.list_or = list_or
 
     def get_n_missing(self, kos):
         return min(node.get_n_missing(kos) for node in self.list_or)
-
-    def get_ko_ids(self):
-        return (node.get_ko_ids() for node in self.list_and)
 
 class KoNode:
     def __init__(self, node_id):
@@ -70,15 +61,10 @@ class KoNode:
             return 0
         return 1
 
-    def get_ko_ids(self):
-        return self.node_id
-
 class UndefinedKoNode:
     def get_n_missing(self, ko):
         return 0
 
-    def get_ko_ids(self):
-        return []
 
 class Token:
     pass
