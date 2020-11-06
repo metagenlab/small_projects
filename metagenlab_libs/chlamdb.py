@@ -13,6 +13,11 @@
 ###############################################################################
 # NOTE: for this script to work, you either need to disable multithreading by 
 # setting N_THREAD to 1 or you need to patch REST.py to use urllib3 (thread safe).
+#
+#
+# TODO: as the REST API does not seem to be under active development, it would
+# be a solution to just import the source files into this directory to solve this
+# problem.
 ###############################################################################
 #
 # Bastian Marquis (bastian.marquis@protonmail.com)
@@ -25,9 +30,8 @@ import argparse
 import queue
 import threading
 
+# to be removed in favor of a local version
 from Bio.KEGG import REST
-from Bio.KEGG import Gene
-
 
 DEFAULT_PSSWD = ""
 DEFAULT_TYPE = "sqlite"
@@ -36,6 +40,7 @@ DEFAULT_DB_NAME = "George"
 # from REST documentation, can get a max of 10 queries 
 # in kegg_get
 MAX_N_QUERIES = 10
+
 # number of threads that will be used simultaneously
 # to download the ko genes. 5 seems a good compromise
 # between being blacklisted and speed
@@ -153,6 +158,9 @@ class Module(object):
 
     def category(self):
         return self.classes[-2]
+
+    def is_signature(self):
+        return self.classes[0] == "Signature modules"
 
     def __str__(self):
         return self.entry + ": " + self.descr
@@ -353,7 +361,7 @@ def load_KO_references(db, params, ko_dir=DEFAULT_KO_DIR):
         module.subcat_id = subcat_id
 
     db.load_ko_module_classes(module_classes)
-    db.load_ko_module([(m.simplified_entry(), m.descr, m.definition, m.cat_id, m.subcat_id)
+    db.load_ko_module([(m.simplified_entry(), m.descr, m.definition, m.is_signature(), m.cat_id, m.subcat_id)
         for m in hsh_modules.values()])
     db.load_ko_pathway([(p.simplified_entry(), p.descr) for p in pathway_set])
     db.load_ko_def([(gene.simplified_entry(), gene.definition) for gene in genes])

@@ -1,6 +1,9 @@
 # LL(1) parser implementation for the module definition of KEGGs.
+#
 # It ultimately allows, after having parsed a definition, to check 
 # how many kegg orthologs are missing to have a complete module.
+#
+# For now, it does not support signature modules.
 # 
 # Author: bastian.marquis@protonmail.com
 # Date: 05.11.2020

@@ -325,7 +325,7 @@ class DB:
     def load_ko_module(self, data):
         sql = (
             "CREATE TABLE ko_module_def ("
-            "module_id INTEGER, desc TEXT, definition TEXT, class INT, subclass INT, "
+            "module_id INTEGER, desc TEXT, definition TEXT, is_signature_module BOOL, class INT, subclass INT, "
             "PRIMARY KEY(module_id), FOREIGN KEY(class) REFERENCES ko_class(class_id), "
             "FOREIGN KEY(subclass) REFERENCES ko_class(class_id));"
         )
