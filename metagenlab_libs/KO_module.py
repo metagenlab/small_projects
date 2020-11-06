@@ -4,6 +4,9 @@
 # how many kegg orthologs are missing to have a complete module.
 #
 # For now, it does not support signature modules.
+#
+# TODO (BM): classes naming is confusing, should have clear difference between
+# tokens and nodes of the syntax tree.
 # 
 # Author: bastian.marquis@protonmail.com
 # Date: 05.11.2020
@@ -229,6 +232,8 @@ class ModuleParser:
             return UndefinedKoNode()
         elif isinstance(n, LeftParToken):
             return self.parse_parentheses()
+        elif isinstance(n, OptionalComplexComponent):
+            return OptionalSubunit([self.parse_leaf()])
         else:
             raise Exception("Unexpected token: "+str(n))
 

@@ -388,8 +388,15 @@ class DB:
         )
         self.server.adaptor.execute(sql)
 
-    def get_all_modules_definition(self):
-        query = "SELECT module_id, definition FROM ko_module_def;"
+    def get_all_modules_definition(self, allow_signature=False):
+        where = ""
+        if not allow_signature:
+            where = "WHERE is_signature_module = 0"
+
+        query = (
+            "SELECT module_id, definition FROM ko_module_def "
+            f"{where};"
+        )
         results = self.server.adaptor.execute_and_fetchall(query)
         return [(line[0], line[1]) for line in results]
 
