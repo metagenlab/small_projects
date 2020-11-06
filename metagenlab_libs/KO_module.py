@@ -46,7 +46,7 @@ class Component:
     def get_ko_ids(self):
         return self.ko_id
 
-class OptionalComponent(Component):
+class OptionalSubunit(Complex):
     def get_n_missing(self, kos):
         return 0
 
@@ -203,12 +203,10 @@ class ModuleParser:
 
     def next_token(self):
         if self.curr_token != None:
-            token = self.curr_token
-            self.curr_token = None
+            token, self.curr_token = self.curr_token, None
             return token
         try:
-            next_token = next(self.token_iter)
-            return next_token
+            return next(self.token_iter)
         except StopIteration as e:
             return None
 
@@ -226,6 +224,8 @@ class ModuleParser:
             return KoNode(n.ko_id)
         elif isinstance(n, UndefinedToken):
             return UndefinedKoNode()
+        elif isinstance(n, LeftParToken):
+            return self.parse_parentheses()
         else:
             raise Exception("Unexpected token: "+str(n))
 
@@ -238,7 +238,7 @@ class ModuleParser:
             compl.list_comp.append(self.parse())
             return compl
         elif isinstance(n, OptionalComplexComponent):
-            optional_compl = OptionalComplexComponent([node])
+            optional_compl = OptionalSubunit([node])
             optional_compl.list_comp.append(self.parse())
             return optional_compl
         else:
@@ -246,12 +246,6 @@ class ModuleParser:
             return node
 
     def parse(self):
-        curr_token = self.next_token()
-
-        if isinstance(curr_token, LeftParToken):
-            return self.parse_parentheses()
-
-        self.curr_token = curr_token
         comp = self.parse_complex()
         n = self.next_token()
         if n==None:

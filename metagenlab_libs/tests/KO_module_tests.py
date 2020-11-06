@@ -17,10 +17,10 @@ database = db_utils.DB.load_db("../George", params)
 
 definitions = database.get_all_modules_definition()
 
-for definition in definitions:
+for KO_id, definition in definitions:
     try:
         mod = KO_module.ModuleParser(definition)
         mod.parse()
     except Exception as e:
         print(str(e))
-        print("Failed on :" + definition)
+        print(f"Failed on KO{KO_id}" + definition)
