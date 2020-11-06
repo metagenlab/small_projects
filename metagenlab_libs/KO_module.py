@@ -11,24 +11,6 @@
 # Author: bastian.marquis@protonmail.com
 # Date: 05.11.2020
 
-class KoModuleTree:
-    def __init__(self, root):
-        self.root = root
-
-    def tokenize():
-        pass
-
-    def parse(ko_definition):
-
-        module_def = KoModule(root)
-        return module_def
-
-    def get_n_missing(self, kos):
-        return self.root.get_n_missing(kos)
-
-    def get_ko_ids(self):
-        return self.get_ko_ids()
-
 class Complex:
     def __init__(self, list_comp):
         self.list_comp = list_comp
@@ -62,10 +44,7 @@ class KoAnd:
         self.list_and = list_and
 
     def get_n_missing(self, kos):
-        n_missing = 0
-        for node in self.list_and:
-            n_missing += node.get_n_missing(kos)
-        return n_missing
+        return sum(node.get_n_missing(kos) for node in self.list_and)
 
     def get_ko_ids(self):
         return (node.get_ko_ids() for node in self.list_and)
