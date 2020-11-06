@@ -21,6 +21,7 @@ database = db_utils.DB.load_db("../George", params)
 
 definitions = database.get_all_modules_definition()
 
+passed_parsing = True
 for KO_id, definition in definitions:
     try:
         mod = KO_module.ModuleParser(definition)
@@ -28,7 +29,11 @@ for KO_id, definition in definitions:
     except Exception as e:
         print(str(e))
         print(f"Failed on KO{KO_id}" + definition)
+        passed_parsing = False
 
+if not passed_parsing:
+    print("Could not parse some modules def in the database")
+    print("Stopped testing here. Please fix parsing.")
 
 def test_expr(expression, expected_result, kos):
     parser = KO_module.ModuleParser(expression)
@@ -45,7 +50,22 @@ test_expr("K00001 K00002", 1, {2})
 test_expr("K00001 K00002", 1, {1})
 test_expr("K00001 K00002", 2, {})
 
+# simple or
+test_expr("K00001,K00002", 0, {1, 2})
+test_expr("K00001,K00002", 0, {2})
+test_expr("K00001,K00002", 0, {2})
+test_expr("K00001,K00002", 1, {})
+
+# simple complex
+test_expr("K00001+K00002", 0, {1, 2})
+test_expr("K00001+K00002", 1, {2})
+test_expr("K00001+K00002", 1, {1})
+test_expr("K00001+K00002", 2, {})
+
+# or / and + parentheses combination
 test_expr("(K00001,K00002) K00003", 0, {1, 2, 3})
 test_expr("(K00001,K00002) K00003", 0, {2, 3})
 test_expr("(K00001,K00002) K00003", 0, {1, 3})
 test_expr("(K00001,K00002) K00003", 1, {1, 2})
+test_expr("(K00001,K00002) K00003", 1, {3})
+test_expr("(K00001,K00002) K00003", 2, {})

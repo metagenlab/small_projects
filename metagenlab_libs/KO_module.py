@@ -16,7 +16,7 @@ class Complex:
         self.list_comp = list_comp
 
     def get_n_missing(self, kos):
-        return sum(node.get_n_missing() for node in self.list_comp)
+        return sum(node.get_n_missing(kos) for node in self.list_comp)
 
     def get_ko_ids(self):
         return (node.get_ko_ids() for node in list_comp)
