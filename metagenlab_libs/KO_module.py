@@ -7,6 +7,8 @@
 #
 # TODO (BM): classes naming is confusing, should have clear difference between
 # tokens and nodes of the syntax tree.
+# TODO(BM): implement str methods for the other syntax tree nodes
+# TODO(BM): add the details of the grammar that is parsed
 # 
 # Author: bastian.marquis@protonmail.com
 # Date: 05.11.2020
