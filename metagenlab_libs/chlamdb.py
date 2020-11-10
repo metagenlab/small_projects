@@ -148,10 +148,15 @@ class Module(object):
         self.entry = None
         self.descr = None
         self.classes = []
-        self.definition = ""
+        self.definition = []
 
     def simplified_entry(self):
         return int(self.entry[len("M"):])
+
+    def get_definition(self):
+        if len(self.definition) == 1:
+            return self.definition[0]
+        return ",".join(f"({part})" for part in self.definition)
 
     def sub_category(self):
         return self.classes[-1]
@@ -208,7 +213,7 @@ def parse_module(handle):
             tokens = data.split(";")
             module.classes = [token.strip() for token in tokens]
         if keyword == "DEFINITION":
-            module.definition = data
+            module.definition.append(data)
 
 
 def parse_gene(handle):
@@ -361,7 +366,7 @@ def load_KO_references(db, params, ko_dir=DEFAULT_KO_DIR):
         module.subcat_id = subcat_id
 
     db.load_ko_module_classes(module_classes)
-    db.load_ko_module([(m.simplified_entry(), m.descr, m.definition, m.is_signature(), m.cat_id, m.subcat_id)
+    db.load_ko_module([(m.simplified_entry(), m.descr, m.get_definition(), m.is_signature(), m.cat_id, m.subcat_id)
         for m in hsh_modules.values()])
     db.load_ko_pathway([(p.simplified_entry(), p.descr) for p in pathway_set])
     db.load_ko_def([(gene.simplified_entry(), gene.definition) for gene in genes])
