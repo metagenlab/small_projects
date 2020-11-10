@@ -287,7 +287,10 @@ class DB:
             "FROM cdd_to_cog;"
         )
         results = self.server.adaptor.execute_and_fetchall(query)
-        return DB.to_hsh(results, [1])
+        hsh_results = {}
+        for line in results:
+            hsh_results[line[0]] = line[1]
+        return hsh_results
 
     
     def load_cog_ref_data(self, data):
@@ -364,14 +367,17 @@ class DB:
         sql = "CREATE INDEX ktmm_i ON ko_to_module(module_id);"
         self.server.adaptor.execute(sql)
 
+
     # Note: EC to add separately?
     def load_ko_def(self, data):
         sql = (
             "CREATE TABLE ko_def ( "
-            "ko_id, descr TEXT, PRIMARY KEY(ko_id));"
+            "ko_id INTEGER, descr TEXT, PRIMARY KEY(ko_id));"
         )
         self.server.adaptor.execute(sql)
         self.load_data_into_table("ko_def", data)
+        sql = "CREATE INDEX kdko_i ON ko_def(ko_id);"
+        self.server.adaptor.execute(sql)
 
 
     def load_ko_hits(self, data):
@@ -388,6 +394,7 @@ class DB:
         )
         self.server.adaptor.execute(sql)
 
+
     def get_all_modules_definition(self, allow_signature=False):
         where = ""
         if not allow_signature:
@@ -399,6 +406,7 @@ class DB:
         )
         results = self.server.adaptor.execute_and_fetchall(query)
         return [(line[0], line[1]) for line in results]
+
 
     def get_ko_total_count(self, ko_ids):
         entries = ",".join("?" for i in ko_ids)
@@ -417,53 +425,42 @@ class DB:
 
     def get_module_categories(self):
         query = (
-            "SELECT descr "
+            "SELECT class_id, descr "
             "FROM ko_module_def "
             "INNER JOIN ko_class ON class_id = class "
             "WHERE is_signature_module = 0 "
             "GROUP BY (descr);"
         )
         results = self.server.adaptor.execute_and_fetchall(query)
-        return [line[0] for line in results]
+        return [(line[0], line[1]) for line in results]
 
 
     def get_module_sub_categories(self):
         query = (
-            "SELECT descr "
+            "SELECT class_id, descr "
             "FROM ko_module_def "
             "INNER JOIN ko_class ON class_id = subclass "
             "WHERE is_signature_module = 0 "
             "GROUP BY (descr);"
         )
         results = self.server.adaptor.execute_and_fetchall(query)
-        return [line[0] for line in results]
+        return [(line[0], line[1]) for line in results]
 
 
-    def to_hsh(results, val_range, has_multiple=False):
-        hsh = {}
-        for line in results:
-            if len(val_range)==1:
-                data = line[val_range[0]]
-            else:
-                data = [line[i] for i in val_range]
-            if not has_multiple:
-                hsh[line[0]] = data
-            else:
-                curr = hsh.get(line[0], [])
-                curr.append(data)
-                hsh[line[0]] = curr
-        return hsh
-
-
+    # NOTE: when new dtb, to modify so that the input 
+    # is sanitized.
     def get_ko_desc(self, ko_ids):
-        entries = ",".join("?" for i in ko_ids)
+        entries = ",".join(f"{ko_id}" for ko_id in ko_ids)
         query = (
             "SELECT ko.ko_id, ko.descr "
             "FROM ko_def as ko "
             f"WHERE ko.ko_id IN ({entries});"
         )
-        results = self.server.adaptor.execute_and_fetchall(query, ko_ids)
-        return DB.to_hsh(results, [1])
+        results = self.server.adaptor.execute_and_fetchall(query)
+        hsh_results = {}
+        for line in results:
+            hsh_results[line[0]] = line[1]
+        return hsh_results
 
 
     def get_ko_pathways(self, ko_ids):
@@ -475,7 +472,13 @@ class DB:
             f"WHERE ktp.ko_id IN ({entries});"
         )
         results = self.server.adaptor.execute_and_fetchall(query, ko_ids)
-        return DB.to_hsh(results, [1,2], has_multiple=True)
+        hsh_results = {}
+        for line in results:
+            ko_id = line[0]
+            data = hsh_results.get(ko_id, [])
+            data.append((line[1], line[2]))
+            hsh_results[ko_id] = data
+        return hsh_results
 
 
     def get_ko_modules(self, ko_ids):
@@ -487,7 +490,41 @@ class DB:
             f"WHERE ktm.ko_id IN ({entries});"
         )
         results = self.server.adaptor.execute_and_fetchall(query, ko_ids)
-        return DB.to_hsh(results, [1,2], has_multiple=True)
+        hsh_results = {}
+        for line in results:
+            ko_id = line[0]
+            data = hsh_results.get(ko_id, [])
+            data.append((line[1], line[2]))
+            hsh_results[ko_id] = data
+        return hsh_results
+
+
+    def get_ko_count_cat(self, category):
+        query = (
+            "SELECT fet.bioentry_id, module.module_id, ktm.ko_id, COUNT(*) "
+            "FROM ko_module_def AS module "
+            "INNER JOIN ko_to_module AS ktm ON module.module_id = ktm.module_id "
+            "INNER JOIN ko_hits AS hit ON hit.ko_id = ktm.ko_id "
+            "INNER JOIN sequence_hash_dictionnary AS hsh ON hit.hsh = hsh.hsh "
+            "INNER JOIN seqfeature AS fet ON fet.seqfeature_id = hsh.seqid "
+            f"WHERE module.subclass = {category} AND is_signature_module = 0 "
+            "GROUP BY fet.bioentry_id, module.module_id, ktm.ko_id;"
+        )
+        results = self.server.adaptor.execute_and_fetchall(query)
+        return DB.to_pandas_frame(results, ["bioentry", "module_id", "KO", "count"])
+
+
+    def get_modules_info(self, modules_id):
+        fmt = ",".join("?" for i in modules_id)
+        query = (
+            "SELECT module_id, desc, definition, cat.descr, subcat.descr "
+            "FROM ko_module_def AS def "
+            "INNER JOIN ko_class AS subcat ON subcat.class_id = def.subclass "
+            "INNER JOIN ko_class AS cat ON cat.class_id = def.class "
+            f"WHERE is_signature_module = 0 AND module_id IN ({fmt});"
+        )
+        results = self.server.adaptor.execute_and_fetchall(query, modules_id)
+        return [(line[0], line[1], line[2], line[3], line[4]) for line in results]
 
 
     def get_ko_count(self, bioentries):
@@ -505,14 +542,15 @@ class DB:
 
 
     def get_seqids_for_ko(self, ko_ids):
-        entries = ",".join("?" for i in bioentries)
+        entries = ",".join("?" for i in ko_ids)
         query = (
-            "SELECT seqid"
-            "FROM ko_hits "
-            "INNER JOIN sequence_hash_dictionnary"
-            f"WHERE ko_id IN ({entries});"
+            "SELECT hsh.seqid "
+            "FROM ko_hits AS hits "
+            "INNER JOIN sequence_hash_dictionnary as hsh ON hsh.hsh = hits.hsh "
+            f"WHERE ko_id IN ({entries}) GROUP BY hsh.seqid;"
         )
-        return [line[0] for line in results].unique()
+        results = self.server.adaptor.execute_and_fetchall(query, ko_ids)
+        return [line[0] for line in results]
 
 
     def get_hsh_locus_to_seqfeature_id(self):
