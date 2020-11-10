@@ -526,6 +526,21 @@ class DB:
         results = self.server.adaptor.execute_and_fetchall(query, modules_id)
         return [(line[0], line[1], line[2], line[3], line[4]) for line in results]
 
+    def get_ko_count_for_ko(self, ko_id):
+        query = (
+            "SELECT fet.bioentry_id, COUNT(*) "
+            "FROM ko_hits as hits "
+            "INNER JOIN sequence_hash_dictionnary AS hsh ON hsh.hsh = hits.hsh "
+            "INNER JOIN seqfeature AS fet ON fet.seqfeature_id = hsh.seqid "
+            f"WHERE hits.ko_id = {ko_id} "
+            "GROUP BY fet.bioentry_id;"
+        )
+        results = self.server.adaptor.execute_and_fetchall(query)
+        hsh_results = {}
+        for line in results:
+            bioentry, cnt = line[0], line[1]
+            hsh_results[bioentry] = cnt
+        return hsh_results
 
     def get_ko_count(self, bioentries):
         entries = ",".join("?" for i in bioentries)
