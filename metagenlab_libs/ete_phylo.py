@@ -4,7 +4,136 @@ from ete3 import Tree, SeqMotifFace, TreeStyle, add_face_to_node, TextFace, BarC
 import ete3
 from matplotlib.colors import rgb2hex
 
-             
+import math
+
+
+def layout(node):
+    return
+
+class EteTree:
+
+    DEFAULT_COLORS = ['#fc8d59', '#91bfdb', '#99d594', '#c51b7d', '#f1a340', '#999999']
+    BLUE = "#58ACFA"
+    GREEN = "#99d594"
+    ORANGE = "#fc8d59"
+
+    def __init__(self, nwck_tree, **drawing_params):
+        self.tree = nwck_tree
+        self.params = drawing_params
+        self.columns = []
+        self.leaves_name = None
+
+    def add_column(self, face):
+        self.columns.append(face)
+
+    # Default style, may be overriden in a children class to change 
+    # the behaviour
+    def get_style(self):
+        tss = TreeStyle()
+        tss.draw_guiding_lines = True
+        tss.guiding_lines_color = "gray"
+        tss.show_branch_support = False
+        tss.show_leaf_name = False
+        return tss
+
+    # May be a good idea to be able to give custom parameters to the node names
+    def get_leaf_name(self, index):
+        label = self.leaves_name.get(index, self.default_val)
+        return TextFace(label, fgcolor = "black", fsize = 12, fstyle = "italic")
+
+    def rename_leaves(self, hsh_names, default_val="-"):
+        self.default_val = default_val
+        self.leaves_name = hsh_names
+
+    def render(self, destination, **kwargs):
+        for leaf in self.tree.iter_leaves():
+            if self.leaves_name != None:
+                leaf.add_face(self.get_leaf_name(leaf.name), 0, "branch-right")
+
+            for col_no, column in enumerate(self.columns):
+                # Note: this assumes that only bioentries (integer)
+                # are used as leaf names
+                leaf.add_face(column.get_face(int(leaf.name)), col_no, "aligned")
+
+        tree_style = self.get_style()
+        for col_no, column in enumerate(self.columns):
+            header = column.get_header()
+            if header != None:
+                tree_style.aligned_header.add_face(header, col_no)
+
+        self.tree.render(destination, tree_style=tree_style, **kwargs)
+
+
+class Column:
+    def __init__(self):
+        self.header = None
+
+    def get_header(self):
+        if self.header == None:
+            return None
+        face = TextFace(self.header)
+        face.rotation = 270
+        face.hz_align = 1
+        face.vt_align = 1
+        return face
+
+class SimpleColorColumn(Column):
+    def __init__(self, values, header=None):
+        self.values = values
+        self.header = header
+
+    def get_face(self, index):
+        val = self.values.get(index, 0)
+        text_face = TextFace(val)
+
+        # to recode
+        if val != 0 and index in self.values:
+            text_face.inner_background.color = EteTree.BLUE
+
+        # should be put somewhere else
+        text_face.margin_top = 2
+        text_face.margin_right = 2
+        text_face.margin_left = 2
+        text_face.margin_bottom = 2
+        text_face.hz_align = 1
+        text_face.vt_align = 1
+        text_face.border.width = 3
+        text_face.border.color = "#ffffff"
+        return text_face
+
+class ModuleCompletenessColumn(Column):
+
+    def __init__(self, values, header=None):
+        self.values = values
+        self.header = header
+
+    def get_face(self, index):
+        val = self.values.get(index, 0)
+        text_face = TextFace(val)
+
+        if val == 0:
+            text_face.inner_background.color = EteTree.GREEN
+        else:
+            text_face.inner_background.color = EteTree.ORANGE
+
+        text_face.margin_top = 2
+        text_face.margin_right = 10
+        text_face.margin_left = 10
+        text_face.margin_bottom = 2
+        text_face.hz_align = 1
+        text_face.vt_align = 1
+        text_face.border.width = 3
+        text_face.border.color = "#ffffff"
+        return text_face
+
+class ReferenceColumn(Column):
+    def __init__(self, values):
+        pass
+
+    def get_face(self, index):
+        pass
+
+
 class EteTool():
 
     '''

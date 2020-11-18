@@ -156,7 +156,9 @@ class Module(object):
     def get_definition(self):
         if len(self.definition) == 1:
             return self.definition[0]
-        return ",".join(f"({part})" for part in self.definition)
+        # Module definitions may come on multiple lines, join them
+        # with an AND
+        return " ".join(f"({part})" for part in self.definition)
 
     def sub_category(self):
         return self.classes[-1]

@@ -37,9 +37,10 @@ if not passed_parsing:
     sys.exit(1)
 
 def test_expr(expression, expected_result, kos):
+    ko_dict = {ko: 1 for ko in kos}
     parser = KO_module.ModuleParser(expression)
     tree = parser.parse()
-    n_missing = tree.get_n_missing(kos)
+    n_missing = tree.get_n_missing(ko_dict)
     if n_missing == expected_result:
         print("Passed: ", expression)
     else:
@@ -109,7 +110,7 @@ test_expr("(K00001,K00002) K00003", 0, {2, 3})
 test_expr("(K00001,K00002) K00003", 0, {1, 3})
 test_expr("(K00001,K00002) K00003", 1, {1, 2})
 test_expr("(K00001,K00002) K00003", 1, {3})
-test_expr("(K00001,K00002) K00003", 2, {})
+test_expr("(K00001,K00002,K00004) K00003", 2, {})
 
 # or / and + parentheses combination
 test_expr("K00003 (K00001,K00002)", 0, {1, 2, 3})

@@ -423,24 +423,36 @@ class DB:
         return df.groupby("KO").count()
 
 
-    def get_module_categories(self):
+    def get_module_categories(self, module_ids=None):
+        if module_ids!=None:
+            selection_str = ",".join(str(mod_id) for mod_id in module_ids)
+            selection = f"AND ko_module_def.module_id IN ({selection_str})"
+        else:
+            selection = ""
+
         query = (
             "SELECT class_id, descr "
             "FROM ko_module_def "
             "INNER JOIN ko_class ON class_id = class "
-            "WHERE is_signature_module = 0 "
+            f"WHERE is_signature_module = 0 {selection}"
             "GROUP BY (descr);"
         )
         results = self.server.adaptor.execute_and_fetchall(query)
         return [(line[0], line[1]) for line in results]
 
 
-    def get_module_sub_categories(self):
+    def get_module_sub_categories(self, module_ids=None):
+        if module_ids!=None:
+            selection_str = ",".join(str(mod_id) for mod_id in module_ids)
+            selection = f"AND ko_module_def.module_id IN ({selection_str})"
+        else:
+            selection = ""
+
         query = (
             "SELECT class_id, descr "
             "FROM ko_module_def "
             "INNER JOIN ko_class ON class_id = subclass "
-            "WHERE is_signature_module = 0 "
+            f"WHERE is_signature_module = 0 {selection}"
             "GROUP BY (descr);"
         )
         results = self.server.adaptor.execute_and_fetchall(query)
@@ -479,6 +491,20 @@ class DB:
             data.append((line[1], line[2]))
             hsh_results[ko_id] = data
         return hsh_results
+
+
+    def get_module_kos(self, module_id):
+        query = (
+            "SELECT ktm.ko_id "
+            "FROM ko_to_module AS ktm "
+            f"WHERE ktm.module_id = {module_id};"
+        )
+        print(query)
+        results = self.server.adaptor.execute_and_fetchall(query)
+        lst_results = []
+        for line in results:
+            lst_results.append(line[0])
+        return lst_results
 
 
     def get_ko_modules(self, ko_ids):
@@ -526,19 +552,31 @@ class DB:
         results = self.server.adaptor.execute_and_fetchall(query, modules_id)
         return [(line[0], line[1], line[2], line[3], line[4]) for line in results]
 
+
     def get_ko_count_for_ko(self, ko_id):
+        has_multiple = isinstance(ko_id, list)
+        if has_multiple:
+            search_str = ",".join(str(ko) for ko in ko_id)
+            selection_query = f"IN ({search_str})"
+        else:
+            selection_query = f" = {ko_id}"
+
         query = (
-            "SELECT fet.bioentry_id, COUNT(*) "
+            "SELECT fet.bioentry_id, hits.ko_id, COUNT(*) "
             "FROM ko_hits as hits "
             "INNER JOIN sequence_hash_dictionnary AS hsh ON hsh.hsh = hits.hsh "
             "INNER JOIN seqfeature AS fet ON fet.seqfeature_id = hsh.seqid "
-            f"WHERE hits.ko_id = {ko_id} "
-            "GROUP BY fet.bioentry_id;"
+            f"WHERE hits.ko_id {selection_query} "
+            "GROUP BY fet.bioentry_id, hits.ko_id;"
         )
         results = self.server.adaptor.execute_and_fetchall(query)
+
+        if has_multiple:
+            return DB.to_pandas_frame(results, ["bioentry", "ko_id", "count"])
+
         hsh_results = {}
         for line in results:
-            bioentry, cnt = line[0], line[1]
+            bioentry, ko_id, cnt = line[0], line[1], line[2]
             hsh_results[bioentry] = cnt
         return hsh_results
 
@@ -1178,7 +1216,7 @@ class DB:
         data = []
         for line in db_results:
             data.append(line)
-        return pd.DataFrame(data, columns=columns)
+        return pd.DataFrame(data, columns=columns, dtype=int)
 
     # For each genome, return the number of gene that were assigned
     # to each orthogroup passed in argument

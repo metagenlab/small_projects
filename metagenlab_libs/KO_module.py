@@ -58,7 +58,7 @@ class KoNode:
 
     def get_n_missing(self, kos):
         if self.node_id in kos:
-            return 0
+            return 0 if kos[self.node_id] > 0 else 1
         return 1
 
 class UndefinedKoNode:
