@@ -10,6 +10,43 @@ class DB:
         self.conn = sqlite3.connect(self.db_path)
         self.cursor = self.conn.cursor()
         
+    def get_fastq_qc_metric(self, metric_name):
+        
+        sql = f'''select fastq_prefix,metric_value from GEN_fastqfiles t1
+                  inner join GEN_runsqc t2 on t1.id=t2.fastq_id
+                  inner join GEN_qcmetrics t3 on t2.metric_id=t3.id
+                  where metric_name="{metric_name}";'''
+                  
+        print(sql)
+
+        return {str(i[0]):i[1] for i in self.cursor.execute(sql,).fetchall()}
+    
+    def get_fastq(self, run_name=False):
+        
+        sql = 'select run_name,date_run,qc,fastq_prefix,xlsx_sample_ID,species_name,date_received,read_length from GEN_fastqfiles t1 ' \
+            ' inner join GEN_runs t2 on t1.run_id=t2.id ' \
+            ' left join GEN_fastqtosample t3 on t1.id=t3.fastq_id' \
+            ' left join GEN_sample t4 on t3.sample_id=t4.id'
+
+        sql = '''
+        select run_name,qc,fastq_prefix,read_length,t3.id,species_name,date_received,t4.run_date from GEN_fastqfiles t1 
+        left join GEN_fastqtosample t2 on t1.id=t2.fastq_id 
+        left join GEN_sample t3 on t2.sample_id=t3.id 
+        left join GEN_runs t4 on t1.run_id=t4.id
+        '''
+
+        if run_name:
+            sql += f'\nwhere run_name="{run_name}"'
+
+        print(sql)
+    
+        return self.cursor.execute(sql,).fetchall()
+    
+    def get_run_table(self,):
+        sql = '''select run_date,run_name,read_length,filearc_folder,qc,qc_path,count(*) as n_fastq from GEN_runs t1
+        inner join GEN_fastqfiles t2 on t1.id=t2.run_id group by run_date,run_name,read_length,filearc_folder,qc,qc_path
+        '''       
+        return [list(i) for i in self.cursor.execute(sql,).fetchall()]
 
     def get_run_samples(self, run_name):
         
@@ -90,6 +127,18 @@ class DB:
         sql = 'update GEN_runs set qc_path=? where run_name=?'
         self.cursor.execute(sql, (run_path, run_name))
         self.conn.commit()
+    
+    
+    def get_sample2species(self, sample_list):
+        
+        sample_list_filter = '","'.join(sample_list)
+        sql = f'''select distinct fastq_prefix,species_name from GEN_fastqfiles t1 
+              left join GEN_fastqtosample t2 on t1.id=t2.fastq_id
+              left join GEN_sample t3 on t2.sample_id=t3.id 
+              where fastq_prefix in ("{sample_list_filter}");
+           '''
+    
+        return {i[0]:i[1] for i in self.cursor.execute(sql,)}
     
     
     def get_sample2species(self, sample_list):
