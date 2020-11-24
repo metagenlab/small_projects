@@ -5,9 +5,9 @@ from requests.auth import HTTPBasicAuth
 class AirflowApi():
     
     
-    def __init__(self, username, password):
+    def __init__(self, username, password, url="http://0.0.0.0",port="8081"):
         
-        self.API_ENDPOINT = "http://0.0.0.0:8081/api/experimental/"
+        self.API_ENDPOINT = f"{url}:{port}/api/experimental/"
         
         self.headers = {'Content-Type': 'application/json',
                         'Cache-Control': 'no-cache'}
