@@ -7,7 +7,7 @@ class AirflowApi():
     
     def __init__(self, username, password):
         
-        self.API_ENDPOINT = "http://0.0.0.0:8007/api/experimental/"
+        self.API_ENDPOINT = "http://0.0.0.0:8081/api/experimental/"
         
         self.headers = {'Content-Type': 'application/json',
                         'Cache-Control': 'no-cache'}

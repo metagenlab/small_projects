@@ -1,4 +1,4 @@
-
+import pandas
 
 
 class DB:
@@ -23,13 +23,13 @@ class DB:
     
     def get_fastq(self, run_name=False):
         
-        sql = 'select run_name,date_run,qc,fastq_prefix,xlsx_sample_ID,species_name,date_received,read_length from GEN_fastqfiles t1 ' \
+        sql = 'select run_name,date_run,qc,fastq_prefix,xlsx_sample_ID,species_name,date_received,read_length,t1.id from GEN_fastqfiles t1 ' \
             ' inner join GEN_runs t2 on t1.run_id=t2.id ' \
             ' left join GEN_fastqtosample t3 on t1.id=t3.fastq_id' \
             ' left join GEN_sample t4 on t3.sample_id=t4.id'
 
         sql = '''
-        select run_name,qc,fastq_prefix,read_length,t3.id,species_name,date_received,t4.run_date from GEN_fastqfiles t1 
+        select run_name,qc,fastq_prefix,read_length,t3.id,species_name,date_received,t4.run_date,t1.id from GEN_fastqfiles t1 
         left join GEN_fastqtosample t2 on t1.id=t2.fastq_id 
         left join GEN_sample t3 on t2.sample_id=t3.id 
         left join GEN_runs t4 on t1.run_id=t4.id
@@ -41,6 +41,19 @@ class DB:
         print(sql)
     
         return self.cursor.execute(sql,).fetchall()
+    
+    def get_fastq_metadata(self, fastq_id_list):
+        
+        fastq_list_filter = '","'.join([str(i) for i in fastq_id_list])
+        # left join because some fastq won't have match in the sample table
+        sql = f'''select t1.id as fastq_id,fastq_prefix,R1,R2,species_name from GEN_fastqfiles t1 
+                left join GEN_fastqtosample t2 on t1.id=t2.fastq_id
+                left join GEN_sample t3 on t2.sample_id=t3.id 
+                where t1.id in ("{fastq_list_filter}");
+            '''
+        
+        return pandas.read_sql(sql, self.conn)
+    
     
     def get_run_table(self,):
         sql = '''select run_date,run_name,read_length,filearc_folder,qc,qc_path,count(*) as n_fastq from GEN_runs t1
@@ -137,17 +150,16 @@ class DB:
               left join GEN_sample t3 on t2.sample_id=t3.id 
               where fastq_prefix in ("{sample_list_filter}");
            '''
-    
+        
         return {i[0]:i[1] for i in self.cursor.execute(sql,)}
     
-    
-    def get_sample2species(self, sample_list):
+    def get_fastq_id2species(self, fastq_list):
         
-        sample_list_filter = '","'.join(sample_list)
+        fastq_list_filter = '","'.join([str(i) for i in fastq_list])
         sql = f'''select distinct fastq_prefix,species_name from GEN_fastqfiles t1 
               left join GEN_fastqtosample t2 on t1.id=t2.fastq_id
               left join GEN_sample t3 on t2.sample_id=t3.id 
-              where fastq_prefix in ("{sample_list_filter}");
+              where t1.id in ("{fastq_list_filter}");
            '''
-    
+        print(sql)
         return {i[0]:i[1] for i in self.cursor.execute(sql,)}
