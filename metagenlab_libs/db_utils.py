@@ -499,7 +499,6 @@ class DB:
             "FROM ko_to_module AS ktm "
             f"WHERE ktm.module_id = {module_id};"
         )
-        print(query)
         results = self.server.adaptor.execute_and_fetchall(query)
         lst_results = []
         for line in results:
@@ -507,20 +506,34 @@ class DB:
         return lst_results
 
 
-    def get_ko_modules(self, ko_ids):
+    # compact: do not return the module description if true
+    def get_ko_modules(self, ko_ids, as_pandas=False, compact=False):
         entries = ",".join("?" for i in ko_ids)
+        if compact:
+            supp_query = ""
+            ids = ["ko_id", "module_id"]
+        else:
+            supp_query = ", mod_desc"
+            ids = ["ko_id", "module_id", "desc"]
+
         query = (
-            "SELECT ktm.ko_id, mod.module_id, mod.desc "
+            f"SELECT ktm.ko_id, mod.module_id {supp_query} "
             "FROM ko_to_module AS ktm "
             "INNER JOIN ko_module_def AS mod ON mod.module_id = ktm.module_id "
             f"WHERE ktm.ko_id IN ({entries});"
         )
         results = self.server.adaptor.execute_and_fetchall(query, ko_ids)
         hsh_results = {}
+        if as_pandas:
+            return DB.to_pandas_frame(results, ids)
         for line in results:
             ko_id = line[0]
             data = hsh_results.get(ko_id, [])
-            data.append((line[1], line[2]))
+
+            if compact:
+                data.append(line[1])
+            else:
+                data.append((line[1], line[2]))
             hsh_results[ko_id] = data
         return hsh_results
 
@@ -540,7 +553,7 @@ class DB:
         return DB.to_pandas_frame(results, ["bioentry", "module_id", "KO", "count"])
 
 
-    def get_modules_info(self, modules_id):
+    def get_modules_info(self, modules_id, as_pandas=False):
         fmt = ",".join("?" for i in modules_id)
         query = (
             "SELECT module_id, desc, definition, cat.descr, subcat.descr "
@@ -550,6 +563,9 @@ class DB:
             f"WHERE is_signature_module = 0 AND module_id IN ({fmt});"
         )
         results = self.server.adaptor.execute_and_fetchall(query, modules_id)
+
+        if as_pandas:
+            return DB.to_pandas_frame(results, ["module_id", "descr", "definition", "cat", "subcat"])
         return [(line[0], line[1], line[2], line[3], line[4]) for line in results]
 
 
