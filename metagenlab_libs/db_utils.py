@@ -538,7 +538,29 @@ class DB:
         return hsh_results
 
 
-    def get_ko_count_cat(self, category):
+    def get_ko_count_cat(self, category=None, bioentries=None, category_name=None):
+        if category!=None and category_name!=None:
+            raise RuntimeError("Selection on both category and category name not supported")
+        if category==None and category_name==None:
+            raise RuntimeError("Need at least category or category name")
+        sel = ""
+
+        args = []
+        if bioentries != None:
+            sel_str = ",".join("?" for entry in bioentries)
+            sel = f" AND fet.bioentry_id IN ({sel_str})"
+            args = bioentries
+
+        if category != None:
+            where = f"WHERE module.subclass = ? AND is_signature_module = 0 {sel}"
+            args = [category] + args
+        if category_name != None:
+            where = (
+                "INNER JOIN ko_class AS class ON module.subclass = class.class_id "
+                f"WHERE class.descr = ? AND is_signature_module = 0 {sel}"
+            )
+            args = [category_name] + args
+
         query = (
             "SELECT fet.bioentry_id, module.module_id, ktm.ko_id, COUNT(*) "
             "FROM ko_module_def AS module "
@@ -546,10 +568,10 @@ class DB:
             "INNER JOIN ko_hits AS hit ON hit.ko_id = ktm.ko_id "
             "INNER JOIN sequence_hash_dictionnary AS hsh ON hit.hsh = hsh.hsh "
             "INNER JOIN seqfeature AS fet ON fet.seqfeature_id = hsh.seqid "
-            f"WHERE module.subclass = {category} AND is_signature_module = 0 "
+            f"{where}"
             "GROUP BY fet.bioentry_id, module.module_id, ktm.ko_id;"
         )
-        results = self.server.adaptor.execute_and_fetchall(query)
+        results = self.server.adaptor.execute_and_fetchall(query, args)
         return DB.to_pandas_frame(results, ["bioentry", "module_id", "KO", "count"])
 
 
