@@ -3,6 +3,8 @@
 import os
 import yaml
 from datetime import datetime
+from metagenlab_libs import gendb_utils
+
 
 def clean_species(species_string):
     import re 
@@ -22,16 +24,19 @@ def make_run_dir(execution_folder,
     import shutil
     import errno
     
-    analysis_id = datetime.now().strftime("%Y_%m_%d-%H%M")
+    folder_name = datetime.now().strftime("%Y_%m_%d-%H%M")
     
-    run_execution_folder = os.path.join(execution_folder, analysis_id)
+    run_execution_folder = os.path.join(execution_folder, folder_name)
+    
+    if analysis_id:
+        gendb_utils.add_analysis_metadata(analysis_id, "airflow_execution_folder", run_execution_folder)
     
     # remove existing dir
     shutil.rmtree(run_execution_folder, ignore_errors=True)
     # make dir
     os.makedirs(run_execution_folder)
     
-    return analysis_id
+    return folder_name
 
 def write_sample_file(gen_db,
                       fastq_list,

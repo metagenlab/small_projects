@@ -1,5 +1,15 @@
 import pandas
+from django.conf import settings
+try:
+    import GEN_database.settings as GEN_settings
 
+    settings.configure(INSTALLED_APPS=GEN_settings.INSTALLED_APPS,
+                    DATABASES=GEN_settings.DATABASES)
+
+    import django
+    django.setup()
+except:
+    pass
 
 class DB:
     def __init__(self, db_path):
@@ -164,3 +174,76 @@ class DB:
         print(sql)
         return {i[0]:i[1] for i in self.cursor.execute(sql,)}
     
+
+def update_analysis_status(analysis_id, status):
+    from GEN.models import Analysis
+    m = Analysis.objects.filter(id=analysis_id)[0]
+    m.status = status
+    m.save()
+    
+def add_analysis_metadata(analysis, term, value, update=False):
+    from GEN.models import Term
+    from GEN.models import AnalysisMetadata
+    if not update:
+        term = Term.objects.get_or_create(name=term)[0]
+        m = AnalysisMetadata(term=term, analysis_id=analysis, value=value)
+        m.save()
+    else:
+        m = AnalysisMetadata.objects.filter(term=term_status, analysis_id=analysis, value=value)[0]
+        m.value = status
+        m.save()
+        
+def create_project_analysis(subproject_id,
+                            fastq_id_list,
+                            analysis_description,
+                            reference_fastq_id_list = [],
+                            workflow_name="Airflow_epidemiology"):
+                
+    from GEN.models import Workflow
+    from GEN.models import WorkflowSteps
+    from GEN.models import FastqFiles
+    from GEN.models import FastqSet
+    from GEN.models import Term
+    from GEN.models import AnalysisStatus
+    from GEN.models import ProjectAnalysis
+    from GEN.models import Analysis
+    from GEN.models import AnalysisMetadata
+    from datetime import datetime
+    
+    # create new analysis
+    workflow_instance = Workflow.objects.filter(workflow_name=workflow_name)
+    workflow_instance = workflow_instance[0]
+    analysis = Analysis(workflow=workflow_instance, start_date=datetime.today())
+    analysis.save()
+        
+    # associate analysis to project
+    project_analysis = ProjectAnalysis(analysis=analysis, subproject_id=subproject_id)
+    project_analysis.save()
+    
+    # insert description as metadata
+    term = Term.objects.get_or_create(name="description")[0]
+    desc = AnalysisMetadata(term=term, analysis=analysis, value=analysis_description)
+    desc.save()
+    
+    if len(reference_fastq_id_list) > 0:
+        term_ref_genome = Term.objects.get_or_create(name="reference_genome")[0]
+        for ref_genome in reference_fastq_id_list:
+            m = AnalysisMetadata(term=term_ref_genome, analysis=analysis, value=ref_genome)
+            m.save()  
+    
+    # add each fastq to fastq set
+    for fastq_id in fastq_id_list:
+        print("fastq_id", fastq_id)
+        fastq_instance = FastqFiles.objects.filter(id=fastq_id)[0]
+        new_set_fastq = FastqSet(analysis=analysis, fastq=fastq_instance)
+        new_set_fastq.save()
+
+    # create "AnalysisStatus" entry for each step of the workflow
+    # ==> all marked as not DONE
+    all_steps = WorkflowSteps.objects.filter(workflow=workflow_instance)
+    for one_step in all_steps:
+        new_project_analysis_status_instance = AnalysisStatus(analysis=analysis, step=one_step.step, status=0)
+        new_project_analysis_status_instance.save()
+        
+    
+    return analysis.id
