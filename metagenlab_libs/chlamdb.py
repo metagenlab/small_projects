@@ -158,7 +158,7 @@ class Module(object):
             return self.definition[0]
         # Module definitions may come on multiple lines, join them
         # with an AND
-        return " ".join(f"({part})" for part in self.definition)
+        return " ".join(f"{part}" for part in self.definition)
 
     def sub_category(self):
         return self.classes[-1]

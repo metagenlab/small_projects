@@ -513,7 +513,7 @@ class DB:
             supp_query = ""
             ids = ["ko_id", "module_id"]
         else:
-            supp_query = ", mod_desc"
+            supp_query = ", mod.desc"
             ids = ["ko_id", "module_id", "desc"]
 
         query = (
@@ -596,30 +596,53 @@ class DB:
             hsh_results[bioentry] = cnt
         return hsh_results
 
-    def get_ko_count(self, bioentries):
+
+    def get_ko_count(self, bioentries, keep_seqids=False):
+        if keep_seqids:
+            keep_sel = " hsh.seqid, "
+            keep_grp = " , hsh.seqid"
+            ids = ["bioentry", "KO", "seqid", "count"]
+        else:
+            keep_sel = ""
+            keep_grp = ""
+            ids = ["bioentry", "KO", "count"]
+
         entries = ",".join("?" for i in bioentries)
         query = (
-            "SELECT feature.bioentry_id, hit.ko_id, count(*) "
+            f"SELECT feature.bioentry_id, hit.ko_id, {keep_sel} count(*) "
             "FROM seqfeature AS feature "
             "INNER JOIN sequence_hash_dictionnary AS hsh ON feature.seqfeature_id = hsh.seqid "
             "INNER JOIN ko_hits AS hit ON hit.hsh = hsh.hsh "
             f"WHERE feature.bioentry_id IN ({entries})"
-            "GROUP BY feature.bioentry_id, hit.ko_id;"
+            f"GROUP BY feature.bioentry_id, hit.ko_id {keep_grp};"
         )
         results = self.server.adaptor.execute_and_fetchall(query, bioentries)
-        return DB.to_pandas_frame(results, ["bioentry", "KO", "count"])
+        return DB.to_pandas_frame(results, ids)
 
 
-    def get_seqids_for_ko(self, ko_ids):
+    def get_seqids_for_ko(self, ko_ids, only_seqids=False):
+        if only_seqids:
+            selection = ""
+        else:
+            selection = ", hits.ko_id "
+
         entries = ",".join("?" for i in ko_ids)
         query = (
-            "SELECT hsh.seqid "
+            f"SELECT hsh.seqid {selection}"
             "FROM ko_hits AS hits "
             "INNER JOIN sequence_hash_dictionnary as hsh ON hsh.hsh = hits.hsh "
             f"WHERE ko_id IN ({entries}) GROUP BY hsh.seqid;"
         )
         results = self.server.adaptor.execute_and_fetchall(query, ko_ids)
-        return [line[0] for line in results]
+
+        if only_seqids:
+            return [line[0] for line in results]
+        else:
+            hsh_results = {}
+            for line in results:
+                assert line[0] not in hsh_results
+                hsh_results[line[0]] = line[1]
+            return hsh_results
 
 
     def get_hsh_locus_to_seqfeature_id(self):
@@ -1165,16 +1188,26 @@ class DB:
     # list of seqids, ordered by seqids
     #
     # WARNING: fam_cog relies on the result being ordered by seqfeature_id
-    def get_proteins_info(self, seqids):
+    def get_proteins_info(self, seqids, bioentries=None):
         seqids_query = ",".join(["?"] * len(seqids))
         term_names = ["locus_tag", "protein_id", "gene", "product"]
         term_names_query = ",".join([f"\"{name}\"" for name in term_names])
+
+        if bioentries!=None:
+            entries = ",".join(str(entry) for entry in bioentries)
+            sel = (
+                f"INNER JOIN seqfeature AS seq ON seq.seqfeature_id = v.seqfeature_id "
+                f" AND seq.bioentry_id IN ({entries}) "
+            )
+        else:
+            sel = ""
         query = (
-            "SELECT seqfeature_id, name, value "
+            "SELECT v.seqfeature_id, t.name, v.value "
             "FROM seqfeature_qualifier_value AS v "
             "INNER JOIN term AS t ON t.term_id = v.term_id "
-            f"WHERE seqfeature_id IN ({seqids_query}) AND name IN ({term_names_query}) "
-            "ORDER BY seqfeature_id ASC;"
+            f"{sel}"
+            f"WHERE v.seqfeature_id IN ({seqids_query}) AND name IN ({term_names_query}) "
+            "ORDER BY v.seqfeature_id ASC;"
         )
         results = self.server.adaptor.execute_and_fetchall(query, seqids)
 
