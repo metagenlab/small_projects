@@ -163,3 +163,4 @@ class DB:
            '''
         print(sql)
         return {i[0]:i[1] for i in self.cursor.execute(sql,)}
+    
