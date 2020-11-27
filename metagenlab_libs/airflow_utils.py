@@ -123,14 +123,20 @@ SLACK_CONN_ID = 'slack'
 
 def task_fail_slack_alert(context):
 
+    print("task_fail_slack_alert")
+    
     slack_webhook_token = BaseHook.get_connection(SLACK_CONN_ID).password
 
-    conf = context.get("conf")#.analysis_id
-    keys = conf.keys()
-    print(dir(conf))
-    print(keys)
-    print(conf.items)
-    print(conf["analysis_id"])
+    dag_run = context.get('dag_run')
+    analysis_id = dag_run.conf.get('analysis_id')
+    print("analysis_id", analysis_id)
+    
+    if analysis_id:
+        print("ANALYSE")
+        gendb_utils.add_analysis_metadata(analysis.id, "airflow_execution_status", "failed")
+    else:
+        print("NOT ANALYSE")
+
     slack_msg = """
             :red_circle: Task Failed. 
             *Task*: {task}  
@@ -138,57 +144,15 @@ def task_fail_slack_alert(context):
             *Execution Time*: {exec_date}  
             *Log Url*: {log_url} 
             *Analysis*: {analysis_id}
-            *Keys*: {keys}
             """.format(
             task=context.get('task_instance').task_id,
             dag=context.get('task_instance').dag_id,
-            ti=context.get('task_instance'),
             exec_date=context.get('execution_date'),
             log_url=context.get('task_instance').log_url,
-            analysis_id=dir(conf),
-            keys=keys
+            analysis_id=analysis_id,
         )
-            
-    failed_alert = SlackWebhookOperator(
-        task_id='slack_test',
-        http_conn_id='slack',
-        webhook_token=slack_webhook_token,
-        message=slack_msg,
-        username='airflow')
-
-
-    return failed_alert.execute(context=context)
-
-def task_fail(context):
-    '''
-    Slack message + update analysis status
-    '''
-    from airflow.hooks.base_hook import BaseHook
-    from airflow.contrib.operators.slack_webhook_operator import SlackWebhookOperator
-    SLACK_CONN_ID = 'slack'
-    
-    slack_webhook_token = BaseHook.get_connection(SLACK_CONN_ID).password
-    
-    # update status 
-    conf = context.get("conf")
-    print(conf)
-    #print("analysis_id", analysis_id)
-
-    slack_msg = """
-            :red_circle: Task Failed. 
-            *Task*: {task}  
-            *Dag*: {dag} 
-            *Execution Time*: {exec_date}  
-            *Log Url*: {log_url}
-            *Analysis ID*: {analysis_id}
-            """.format(
-            task=context.get('task_instance').task_id,
-            dag=context.get('task_instance').dag_id,
-            ti=context.get('task_instance'),
-            exec_date=context.get('execution_date'),
-            log_url=context.get('task_instance').log_url,
-            analysis_id=conf
-        )
+          
+    print("message:\n", slack_msg)
             
     failed_alert = SlackWebhookOperator(
         task_id='slack_test',
@@ -200,19 +164,19 @@ def task_fail(context):
     return failed_alert.execute(context=context)
 
 
-def task_success(context):
+def task_success_slack_alert(context):
+    
     '''
     Slack message + update analysis status
     '''
-    from airflow.hooks.base_hook import BaseHook
-    from airflow.contrib.operators.slack_webhook_operator import SlackWebhookOperator
-    SLACK_CONN_ID = 'slack'
     
     slack_webhook_token = BaseHook.get_connection(SLACK_CONN_ID).password
-    
-    # update status 
-    analysis_id = context.get("conf").analysis_id
-    print("analysis_id", analysis_id)
+
+    dag_run = context.get('dag_run')
+    analysis_id = dag_run.conf.get('analysis_id')
+
+    if analysis_id:
+        gendb_utils.add_analysis_metadata(analysis.id, "airflow_execution_status", "success")
 
     slack_msg = """
             :green_circle: Dag Success. 
@@ -227,7 +191,7 @@ def task_success(context):
             log_url=context.get('task_instance').log_url,
             analysis_id=analysis_id
         )
-            
+    
     success_alert = SlackWebhookOperator(
         task_id='slack_test',
         http_conn_id='slack',

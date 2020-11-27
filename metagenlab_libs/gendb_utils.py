@@ -189,16 +189,16 @@ def update_analysis_status(analysis_id, status):
     m.status = status
     m.save()
     
-def add_analysis_metadata(analysis, term, value, update=False):
+def add_analysis_metadata(analysis_id, term, value, update=False):
     from GEN.models import Term
     from GEN.models import AnalysisMetadata
+    term = Term.objects.get_or_create(name=term)[0]
     if not update:
-        term = Term.objects.get_or_create(name=term)[0]
-        m = AnalysisMetadata(term=term, analysis_id=analysis, value=value)
+        m = AnalysisMetadata(term=term, analysis_id=analysis_id, value=value)
         m.save()
     else:
         # update value
-        m = AnalysisMetadata.objects.filter(term=term, analysis_id=analysis)[0]
+        m = AnalysisMetadata.objects.filter(term=term, analysis_id=analysis_id)[0]
         m.value = value
         m.save()
         
