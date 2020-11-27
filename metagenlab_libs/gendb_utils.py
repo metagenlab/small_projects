@@ -197,8 +197,9 @@ def add_analysis_metadata(analysis, term, value, update=False):
         m = AnalysisMetadata(term=term, analysis_id=analysis, value=value)
         m.save()
     else:
-        m = AnalysisMetadata.objects.filter(term=term_status, analysis_id=analysis, value=value)[0]
-        m.value = status
+        # update value
+        m = AnalysisMetadata.objects.filter(term=term, analysis_id=analysis)[0]
+        m.value = value
         m.save()
         
 def create_analysis(fastq_id_list,
