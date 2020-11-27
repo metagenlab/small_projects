@@ -133,7 +133,8 @@ def task_fail_slack_alert(context):
     
     if analysis_id:
         print("ANALYSE")
-        gendb_utils.add_analysis_metadata(analysis.id, "airflow_execution_status", "failed")
+        gendb_utils.add_analysis_metadata(analysis_id, "airflow_execution_status", "failed", update=True)
+        gendb_utils.update_analysis_status(analysis_id, "failed")
     else:
         print("NOT ANALYSE")
 
@@ -176,7 +177,8 @@ def task_success_slack_alert(context):
     analysis_id = dag_run.conf.get('analysis_id')
 
     if analysis_id:
-        gendb_utils.add_analysis_metadata(analysis.id, "airflow_execution_status", "success")
+        gendb_utils.add_analysis_metadata(analysis_id, "airflow_execution_status", "success", update=True)
+        gendb_utils.update_analysis_status(analysis_id, "success")
 
     slack_msg = """
             :green_circle: Dag Success. 
