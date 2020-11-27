@@ -80,7 +80,8 @@ def write_snakemake_config_file(analysis_id,
                                 gen_db,
                                 reference_list=False,
                                 scientific_name=False,
-                                check_single_species=False):
+                                check_single_species=False,
+                                reference_docx=False):
     
     run_execution_folder = os.path.join(execution_folder, analysis_id)
     
@@ -109,5 +110,129 @@ def write_snakemake_config_file(analysis_id,
             snakemake_config["reference"] = f'{",".join(ref_list)}'
         if check_single_species:
             snakemake_config["species"] = f'{scientific_name}'
+        if reference_docx:
+            snakemake_config["reference_docx"] = f'{reference_docx}'
 
         documents = yaml.dump(snakemake_config, f)
+        
+
+from airflow.hooks.base_hook import BaseHook
+from airflow.contrib.operators.slack_webhook_operator import SlackWebhookOperator
+
+SLACK_CONN_ID = 'slack'
+
+def task_fail_slack_alert(context):
+
+    slack_webhook_token = BaseHook.get_connection(SLACK_CONN_ID).password
+
+    conf = context.get("conf")#.analysis_id
+    keys = conf.keys()
+    print(dir(conf))
+    print(keys)
+    print(conf.items)
+    print(conf["analysis_id"])
+    slack_msg = """
+            :red_circle: Task Failed. 
+            *Task*: {task}  
+            *Dag*: {dag} 
+            *Execution Time*: {exec_date}  
+            *Log Url*: {log_url} 
+            *Analysis*: {analysis_id}
+            *Keys*: {keys}
+            """.format(
+            task=context.get('task_instance').task_id,
+            dag=context.get('task_instance').dag_id,
+            ti=context.get('task_instance'),
+            exec_date=context.get('execution_date'),
+            log_url=context.get('task_instance').log_url,
+            analysis_id=dir(conf),
+            keys=keys
+        )
+            
+    failed_alert = SlackWebhookOperator(
+        task_id='slack_test',
+        http_conn_id='slack',
+        webhook_token=slack_webhook_token,
+        message=slack_msg,
+        username='airflow')
+
+
+    return failed_alert.execute(context=context)
+
+def task_fail(context):
+    '''
+    Slack message + update analysis status
+    '''
+    from airflow.hooks.base_hook import BaseHook
+    from airflow.contrib.operators.slack_webhook_operator import SlackWebhookOperator
+    SLACK_CONN_ID = 'slack'
+    
+    slack_webhook_token = BaseHook.get_connection(SLACK_CONN_ID).password
+    
+    # update status 
+    conf = context.get("conf")
+    print(conf)
+    #print("analysis_id", analysis_id)
+
+    slack_msg = """
+            :red_circle: Task Failed. 
+            *Task*: {task}  
+            *Dag*: {dag} 
+            *Execution Time*: {exec_date}  
+            *Log Url*: {log_url}
+            *Analysis ID*: {analysis_id}
+            """.format(
+            task=context.get('task_instance').task_id,
+            dag=context.get('task_instance').dag_id,
+            ti=context.get('task_instance'),
+            exec_date=context.get('execution_date'),
+            log_url=context.get('task_instance').log_url,
+            analysis_id=conf
+        )
+            
+    failed_alert = SlackWebhookOperator(
+        task_id='slack_test',
+        http_conn_id='slack',
+        webhook_token=slack_webhook_token,
+        message=slack_msg,
+        username='airflow')
+
+    return failed_alert.execute(context=context)
+
+
+def task_success(context):
+    '''
+    Slack message + update analysis status
+    '''
+    from airflow.hooks.base_hook import BaseHook
+    from airflow.contrib.operators.slack_webhook_operator import SlackWebhookOperator
+    SLACK_CONN_ID = 'slack'
+    
+    slack_webhook_token = BaseHook.get_connection(SLACK_CONN_ID).password
+    
+    # update status 
+    analysis_id = context.get("conf").analysis_id
+    print("analysis_id", analysis_id)
+
+    slack_msg = """
+            :green_circle: Dag Success. 
+            *Dag*: {dag} 
+            *Execution Time*: {exec_date}  
+            *Log Url*: {log_url}
+            *Analysis ID*: {analysis_id}
+            """.format(
+            dag=context.get('task_instance').dag_id,
+            ti=context.get('task_instance'),
+            exec_date=context.get('execution_date'),
+            log_url=context.get('task_instance').log_url,
+            analysis_id=analysis_id
+        )
+            
+    success_alert = SlackWebhookOperator(
+        task_id='slack_test',
+        http_conn_id='slack',
+        webhook_token=slack_webhook_token,
+        message=slack_msg,
+        username='airflow')
+
+    return success_alert.execute(context=context)
