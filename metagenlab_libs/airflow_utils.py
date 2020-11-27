@@ -28,7 +28,9 @@ def make_run_dir(execution_folder,
     
     run_execution_folder = os.path.join(execution_folder, folder_name)
     
-    if analysis_id:
+    if eval(analysis_id):
+        print("adding execution folder for analysis", analysis_id)
+        print(type(analysis_id))
         gendb_utils.add_analysis_metadata(analysis_id, "airflow_execution_folder", run_execution_folder)
     
     # remove existing dir

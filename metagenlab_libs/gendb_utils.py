@@ -66,10 +66,17 @@ class DB:
     
     
     def get_run_table(self,):
-        sql = '''select run_date,run_name,read_length,filearc_folder,qc,qc_path,count(*) as n_fastq from GEN_runs t1
-        inner join GEN_fastqfiles t2 on t1.id=t2.run_id group by run_date,run_name,read_length,filearc_folder,qc,qc_path
-        '''       
-        return [list(i) for i in self.cursor.execute(sql,).fetchall()]
+        
+        from GEN.models import Analysis
+        
+        sql = '''select run_date,run_name,read_length,filearc_folder,qc_id,qc_path,count(*) as n_fastq from GEN_runs t1
+        inner join GEN_fastqfiles t2 on t1.id=t2.run_id group by run_date,run_name,read_length,filearc_folder,qc_id,qc_path
+        ''' 
+        data = [list(i) for i in self.cursor.execute(sql,).fetchall()]
+        for n, row in enumerate(data):
+            if row[4]:
+                data[n][4] = Analysis.objects.filter(id=row[4])[0]
+        return data
 
     def get_run_samples(self, run_name):
         
@@ -193,11 +200,11 @@ def add_analysis_metadata(analysis, term, value, update=False):
         m.value = status
         m.save()
         
-def create_project_analysis(subproject_id,
-                            fastq_id_list,
-                            analysis_description,
-                            reference_fastq_id_list = [],
-                            workflow_name="Airflow_epidemiology"):
+def create_analysis(fastq_id_list,
+                    analysis_description,
+                    reference_fastq_id_list = [],
+                    subproject_id=False,
+                    workflow_name="Airflow_epidemiology"):
                 
     from GEN.models import Workflow
     from GEN.models import WorkflowSteps
@@ -213,12 +220,13 @@ def create_project_analysis(subproject_id,
     # create new analysis
     workflow_instance = Workflow.objects.filter(workflow_name=workflow_name)
     workflow_instance = workflow_instance[0]
-    analysis = Analysis(workflow=workflow_instance, start_date=datetime.today())
+    analysis = Analysis(workflow=workflow_instance, start_date=datetime.today(), status='started')
     analysis.save()
-        
-    # associate analysis to project
-    project_analysis = ProjectAnalysis(analysis=analysis, subproject_id=subproject_id)
-    project_analysis.save()
+    
+    # associated to project if a project id was provided
+    if subproject_id:
+        project_analysis = ProjectAnalysis(analysis=analysis, subproject_id=subproject_id)
+        project_analysis.save()
     
     # insert description as metadata
     term = Term.objects.get_or_create(name="description")[0]
