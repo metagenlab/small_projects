@@ -39,10 +39,11 @@ class DB:
             ' left join GEN_sample t4 on t3.sample_id=t4.id'
 
         sql = '''
-        select run_name,qc,fastq_prefix,read_length,t3.id,species_name,date_received,t4.run_date,t1.id from GEN_fastqfiles t1 
+        select run_name,t5.status,fastq_prefix,read_length,t3.id,species_name,date_received,t4.run_date,t1.id from GEN_fastqfiles t1 
         left join GEN_fastqtosample t2 on t1.id=t2.fastq_id 
         left join GEN_sample t3 on t2.sample_id=t3.id 
         left join GEN_runs t4 on t1.run_id=t4.id
+        left join GEN_analysis t5 on t4.qc_id=t5.id
         '''
 
         if run_name:
