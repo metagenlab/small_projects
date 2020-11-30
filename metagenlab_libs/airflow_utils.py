@@ -4,7 +4,10 @@ import os
 import yaml
 from datetime import datetime
 from metagenlab_libs import gendb_utils
+from airflow.hooks.base_hook import BaseHook
+from airflow.contrib.operators.slack_webhook_operator import SlackWebhookOperator
 
+SLACK_CONN_ID = 'slack'
 
 def clean_species(species_string):
     import re 
@@ -116,10 +119,32 @@ def write_snakemake_config_file(analysis_id,
         documents = yaml.dump(snakemake_config, f)
         
 
-from airflow.hooks.base_hook import BaseHook
-from airflow.contrib.operators.slack_webhook_operator import SlackWebhookOperator
+CMD_BACKUP = f'''
+                 cp -r .snakemake/log {OUTPUT_FOLDER}{{{{ ti.xcom_pull(task_ids='make_rundir') }}}}/snakemake_log;
+                 cp -r logs {OUTPUT_FOLDER}{{{{ ti.xcom_pull(task_ids='make_rundir') }}}};
+              '''
 
-SLACK_CONN_ID = 'slack'
+def backup(execution_folder, 
+           backup_folder,
+           analysis_id, 
+           file_or_folder_list):
+    
+    '''
+    Analysis id: folder within execution_folder (generally execution date)
+    '''
+    
+    import shutil
+    
+    execution_dir = os.path.join(execution_folder, analysis_name)
+    backup_dir = os.path.join(backup_folder, analysis_name)
+    
+    for output in file_or_folder_list:
+        original = os.path.join(execution_dir, output)
+        target = os.path.join(backup_dir, output)
+        print("original", original)
+        print("target", target)
+        shutil.copytree(original, target)
+
 
 def task_fail_slack_alert(context):
 
