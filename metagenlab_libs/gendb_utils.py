@@ -126,23 +126,21 @@ class DB:
     
     def add_metrics_values(self, lst):
         '''
-        [{"sample": sample,
+        [{"fastq_id": fastq_id,
         "metrics_name": metric.lower(),
         "metrics_value": metric_value,
         "pipeline_version" version}]
         '''
         
-        sample_name_list = list(set([i["sample"] for i in lst]))
         metric_list = list(set([i["metrics_name"] for i in lst]))
         
         metric2id = self.get_metrics_name2metrics_id(metric_list)
-        sample2id = self.fastq_prefix2fastq_id(sample_name_list)
         
         sql_insert = 'INSERT OR REPLACE into GEN_runsqc (fastq_id,pipeline_version,metric_id,metric_value) values (?,?,?,?)'
        
         for entry in lst:
             self.cursor.execute(sql_insert,[
-                                            sample2id[entry["sample"]],
+                                            entry["fastq_id"],
                                             entry["pipeline_version"],
                                             metric2id[entry["metrics_name"]],
                                             entry["metrics_value"],
