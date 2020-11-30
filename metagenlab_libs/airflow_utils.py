@@ -45,7 +45,7 @@ def make_run_dir(execution_folder,
 
 def write_sample_file(gen_db,
                       fastq_list,
-                      analysis_id, 
+                      analysis_name, 
                       execution_folder):
         
     if not isinstance(fastq_list, list):
@@ -54,7 +54,7 @@ def write_sample_file(gen_db,
     # id,fastq_prefix,R1,R2,species_name
     fastq_df = gen_db.get_fastq_metadata(fastq_list)
     
-    run_execution_folder = os.path.join(execution_folder, analysis_id)
+    run_execution_folder = os.path.join(execution_folder, analysis_name)
     
     header = ["SampleName",
               "ScientificName",
@@ -62,7 +62,7 @@ def write_sample_file(gen_db,
               "R2", 
               "fastq_id"]
     
-    with open(os.path.join(run_execution_folder, f'{analysis_id}.tsv'), 'w') as f:
+    with open(os.path.join(run_execution_folder, f'{analysis_name}.tsv'), 'w') as f:
         f.write("\t".join(header) + '\n')
         for n, row in fastq_df.iterrows():
             
@@ -76,7 +76,7 @@ def write_sample_file(gen_db,
             
             
             
-def write_snakemake_config_file(analysis_id,
+def write_snakemake_config_file(analysis_name,
                                 fastq_list,
                                 execution_folder,
                                 snakemake_config,
@@ -86,7 +86,7 @@ def write_snakemake_config_file(analysis_id,
                                 check_single_species=False,
                                 reference_docx=False):
     
-    run_execution_folder = os.path.join(execution_folder, analysis_id)
+    run_execution_folder = os.path.join(execution_folder, analysis_name)
     
     if check_single_species and not scientific_name:
         species_list = list(set(gen_db.get_fastq_id2species(fastq_list.split(",")).values()))
@@ -106,9 +106,9 @@ def write_snakemake_config_file(analysis_id,
             sample_name = f'{row["fastq_prefix"]}_{fastq_id}'
             ref_list.append(sample_name)
     
-    with open(os.path.join(run_execution_folder, f'{analysis_id}.config'), 'w') as f:
+    with open(os.path.join(run_execution_folder, f'{analysis_name}.config'), 'w') as f:
         # update sample table name
-        snakemake_config["local_samples"] = f'{analysis_id}.tsv'
+        snakemake_config["local_samples"] = f'{analysis_name}.tsv'
         if reference_list:
             snakemake_config["reference"] = f'{",".join(ref_list)}'
         if check_single_species:
@@ -119,18 +119,17 @@ def write_snakemake_config_file(analysis_id,
         documents = yaml.dump(snakemake_config, f)
         
 
-CMD_BACKUP = f'''
-                 cp -r .snakemake/log {OUTPUT_FOLDER}{{{{ ti.xcom_pull(task_ids='make_rundir') }}}}/snakemake_log;
-                 cp -r logs {OUTPUT_FOLDER}{{{{ ti.xcom_pull(task_ids='make_rundir') }}}};
-              '''
-
 def backup(execution_folder, 
            backup_folder,
-           analysis_id, 
-           file_or_folder_list):
+           analysis_name, 
+           file_or_folder_list,
+           analysis_metadata={}):
     
     '''
-    Analysis id: folder within execution_folder (generally execution date)
+    Analysis name: folder within execution_folder (generally execution date)
+    Analysis_metadata: dictionnary of status to add to LIMS: 
+        {"analysis_id" : <id>,
+         "value": <value>}
     '''
     
     import shutil
@@ -143,7 +142,22 @@ def backup(execution_folder,
         target = os.path.join(backup_dir, output)
         print("original", original)
         print("target", target)
-        shutil.copytree(original, target)
+        if os.path.isdir(original):
+            shutil.rmtree(target, ignore_errors=True)
+            shutil.copytree(original, target)
+        if os.path.isfile(original): 
+            if os.path.exists(target):
+                os.remove(target)
+            shutil.rmtree(target, ignore_errors=True)
+            shutil.copy(original, target)
+    
+    if analysis_metadata:
+        print("analysis_metadata", analysis_metadata)
+        for status_entry in analysis_metadata:
+            gendb_utils.add_analysis_metadata(analysis_metadata[status_entry]["analysis_id"], 
+                                              status_entry, 
+                                              analysis_metadata[status_entry]["value"], 
+                                              update=False)
 
 
 def task_fail_slack_alert(context):
@@ -206,7 +220,7 @@ def task_success_slack_alert(context):
         gendb_utils.update_analysis_status(analysis_id, "success")
 
     slack_msg = """
-            :green_circle: Dag Success. 
+            :heavy_check_mark: Dag Success. 
             *Dag*: {dag} 
             *Execution Time*: {exec_date}  
             *Log Url*: {log_url}
