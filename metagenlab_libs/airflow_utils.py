@@ -6,7 +6,9 @@ from datetime import datetime
 from metagenlab_libs import gendb_utils
 from airflow.hooks.base_hook import BaseHook
 from airflow.contrib.operators.slack_webhook_operator import SlackWebhookOperator
-
+import string 
+import random
+    
 SLACK_CONN_ID = 'slack'
 
 def clean_species(species_string):
@@ -21,13 +23,16 @@ def clean_species(species_string):
     return species 
 
 
+def id_generator(size=6, chars=string.ascii_uppercase + string.digits):
+    return ''.join(random.choice(chars) for _ in range(size))
+
 
 def make_run_dir(execution_folder, 
                  analysis_id):
     import shutil
     import errno
     
-    folder_name = datetime.now().strftime("%Y_%m_%d-%H%M")
+    folder_name = datetime.now().strftime("%Y_%m_%d-%H%M_" + id_generator(6))
     
     run_execution_folder = os.path.join(execution_folder, folder_name)
     
