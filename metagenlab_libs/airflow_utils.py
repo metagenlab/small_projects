@@ -36,9 +36,10 @@ def make_run_dir(execution_folder,
     
     run_execution_folder = os.path.join(execution_folder, folder_name)
     
-    if eval(analysis_id):
-        print("adding execution folder for analysis", analysis_id)
-        print(type(analysis_id))
+    if analysis_id:
+        # update status
+        gendb_utils.add_analysis_metadata(analysis_id, "airflow_execution_status", "running", update=True)
+        # save execution folder
         gendb_utils.add_analysis_metadata(analysis_id, "airflow_execution_folder", run_execution_folder)
     
     # remove existing dir
@@ -51,8 +52,12 @@ def make_run_dir(execution_folder,
 def write_sample_file(gen_db,
                       fastq_list,
                       analysis_name, 
-                      execution_folder):
-        
+                      execution_folder,
+                      analysis_id):
+    
+    # update status
+    gendb_utils.add_analysis_metadata(analysis_id, "airflow_execution_status", "running", update=True)
+    
     if not isinstance(fastq_list, list):
         fastq_list = fastq_list.split(",")
     
@@ -86,11 +91,15 @@ def write_snakemake_config_file(analysis_name,
                                 execution_folder,
                                 snakemake_config,
                                 gen_db,
+                                analysis_id,
                                 reference_list=False,
                                 scientific_name=False,
                                 check_single_species=False,
                                 reference_docx=False):
-    
+
+    # update status
+    gendb_utils.add_analysis_metadata(analysis_id, "airflow_execution_status", "running", update=True)
+
     run_execution_folder = os.path.join(execution_folder, analysis_name)
     
     if check_single_species and not scientific_name:
@@ -128,6 +137,7 @@ def backup(execution_folder,
            backup_folder,
            analysis_name, 
            file_or_folder_list,
+           analysis_id,
            analysis_metadata={}):
     
     '''
@@ -138,6 +148,9 @@ def backup(execution_folder,
     '''
     
     import shutil
+    
+    # update status
+    gendb_utils.add_analysis_metadata(analysis_id, "airflow_execution_status", "running", update=True)
     
     execution_dir = os.path.join(execution_folder, analysis_name)
     backup_dir = os.path.join(backup_folder, analysis_name)
@@ -157,7 +170,6 @@ def backup(execution_folder,
             shutil.copy(original, target)
     
     if analysis_metadata:
-        print("analysis_metadata", analysis_metadata)
         for status_entry in analysis_metadata:
             gendb_utils.add_analysis_metadata(analysis_metadata[status_entry]["analysis_id"], 
                                               status_entry, 
@@ -173,14 +185,12 @@ def task_fail_slack_alert(context):
 
     dag_run = context.get('dag_run')
     analysis_id = dag_run.conf.get('analysis_id')
-    print("analysis_id", analysis_id)
     
     if analysis_id:
-        print("ANALYSE")
         gendb_utils.add_analysis_metadata(analysis_id, "airflow_execution_status", "failed", update=True)
         gendb_utils.update_analysis_status(analysis_id, "failed")
     else:
-        print("NOT ANALYSE")
+        print("NO ANALYSE NUMBER")
 
     slack_msg = """
             :red_circle: Task Failed. 
