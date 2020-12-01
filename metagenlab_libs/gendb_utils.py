@@ -22,7 +22,7 @@ class DB:
         
     def get_fastq_qc_metric(self, metric_name):
         
-        sql = f'''select fastq_prefix,metric_value from GEN_fastqfiles t1
+        sql = f'''select t1.id,metric_value from GEN_fastqfiles t1
                   inner join GEN_runsqc t2 on t1.id=t2.fastq_id
                   inner join GEN_qcmetrics t3 on t2.metric_id=t3.id
                   where metric_name="{metric_name}";'''
@@ -30,7 +30,18 @@ class DB:
         print(sql)
 
         return {str(i[0]):i[1] for i in self.cursor.execute(sql,).fetchall()}
-    
+
+    def get_analysis_metadata(self, term_name):
+        
+        sql = f"""select t1.analysis_id,value from GEN_analysismetadata t1 
+                  inner join GEN_term t2 on t1.term_id =t2.id 
+                  where t2.name like '{term_name}';"""
+                  
+        print(sql)
+
+        return {int(i[0]):i[1] for i in self.cursor.execute(sql,).fetchall()}
+
+  
     def get_fastq(self, run_name=False):
         
         sql = 'select run_name,date_run,qc,fastq_prefix,xlsx_sample_ID,species_name,date_received,read_length,t1.id from GEN_fastqfiles t1 ' \
@@ -179,6 +190,19 @@ class DB:
            '''
         print(sql)
         return {i[0]:i[1] for i in self.cursor.execute(sql,)}
+    
+    def get_sample_table(self,):
+        
+        sql = '''
+        select distinct A.id,A.sample_type,A.sample_name,A.species_name,A.date_registered, A.date_received,A.n_fastq, count(t3.subproject_id ) as n_projects from (
+        select distinct t1.id,t1.sample_type,t1.sample_name,t1.species_name,t1.date_registered, t1.date_received, count(t2.fastq_id) as n_fastq from GEN_sample t1 
+        left join GEN_fastqtosample t2 on t1.id=t2.sample_id 
+        group by t1.id) A  
+        left join GEN_subprojectsample t3 on A.id=t3.sample_id
+        group by A.id 
+        '''
+
+        return self.cursor.execute(sql,).fetchall()
     
 
 def update_analysis_status(analysis_id, status):
