@@ -1311,7 +1311,31 @@ class DB:
             "GROUP BY feature.bioentry_id, orthogroup;"
         )
         results = self.server.adaptor.execute_and_fetchall(query, lookup_term)
-        return DB.to_pandas_frame(results, ["bioentry", "orthogroup", "count"])
+        df = DB.to_pandas_frame(results, ["bioentry", "orthogroup", "count"])
+        df = df.set_index(["bioentry", "orthogroup"]).unstack(level=0, fill_value=0)
+        df.columns = [col for col in df["count"].columns.values]
+        return df
+
+
+    def get_genes_from_og(self, orthogroups, bioentries):
+        bioentry_entries = ",".join("?" for entry in bioentries)
+        og_entries = ",".join("?" for og in orthogroups)
+        
+        # NOTE: left outer because biosql does not insert any entry
+        # for genes that have not been named, but we still want those entries
+        query = (
+            "SELECT og.orthogroup, gene.value, prod.value "
+            "FROM og_hits AS og "
+            "LEFT OUTER JOIN seqfeature_qualifier_value AS gene ON og.seqid=gene.seqfeature_id "
+            " INNER JOIN term AS gene_term ON gene_term.term_id=gene.term_id AND gene_term.name=\"gene\""
+            "INNER JOIN seqfeature_qualifier_value AS prod ON og.seqid=prod.seqfeature_id "
+            " INNER JOIN term AS prod_term ON prod_term.term_id=prod.term_id AND prod_term.name=\"product\""
+            "INNER JOIN seqfeature AS seq ON og.seqid=seq.seqfeature_id "
+            f"WHERE seq.bioentry_id IN ({bioentry_entries}) AND og.orthogroup IN ({og_entries});"
+        )
+        results = self.server.adaptor.execute_and_fetchall(query, bioentries+orthogroups)
+        return DB.to_pandas_frame(results, ["orthogroup", "gene", "product"])
+
 
     # NOTE: should be removed (and use get_cog_hits)
     # Note: only takes the best hits into account
