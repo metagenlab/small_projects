@@ -13,13 +13,12 @@ class FastQCParser():
 
         parsed_modules = [self._parse_module(n) for n in range(0, len(self.modules))]
         
-        self.fastqc_modules = {i[0]:i[1] for i in parsed_modules}
+        self.fastqc_modules = {i[0]:i[1] for i in parsed_modules if i is not None}
         
     def _parse_module(self, index):
         import pandas 
         module_data = self.modules[index].split("\n")
         module_name = module_data[1].replace('>>', '').split("\t")[0]
-        
         header = False
         values = []
         # last row is always empty
@@ -31,9 +30,11 @@ class FastQCParser():
                 if not header:
                     header = module_data[n-1].replace('#', '').split("\t")
                 values.append(line.split("\t"))
-
-        df = pandas.DataFrame(values, columns=header)
-        # set first column as index
-        df = df.set_index(df.columns[0])
-
-        return module_name, df
+        
+        if len(values) > 0:
+            df = pandas.DataFrame(values, columns=header)
+            # set first column as index
+            df = df.set_index(df.columns[0])
+            return module_name, df
+        else:
+            return None

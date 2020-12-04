@@ -135,29 +135,26 @@ class DB:
         
         return {i[0]:i[1] for i in self.cursor.execute(sql,)}
     
-    def add_metrics_values(self, lst):
+    def add_fastq_metadata(self, 
+                           fastq_id,
+                           term_name,
+                           value,
+                           analysis_id=False):
         '''
         [{"fastq_id": fastq_id,
-        "metrics_name": metric.lower(),
-        "metrics_value": metric_value,
-        "pipeline_version" version}]
+        "term_name": <name>,
+        "value": <value>,
+        "analysis_id" analysis_id}]
         '''
-        
-        metric_list = list(set([i["metrics_name"] for i in lst]))
-        
-        metric2id = self.get_metrics_name2metrics_id(metric_list)
-        
-        sql_insert = 'INSERT OR REPLACE into GEN_runsqc (fastq_id,pipeline_version,metric_id,metric_value) values (?,?,?,?)'
-       
-        for entry in lst:
-            self.cursor.execute(sql_insert,[
-                                            entry["fastq_id"],
-                                            entry["pipeline_version"],
-                                            metric2id[entry["metrics_name"]],
-                                            entry["metrics_value"],
-                                           ])
-        self.conn.commit()
-        
+        from GEN.models import Term
+        from GEN.models import FastqFilesMetadata
+        term = Term.objects.get_or_create(name=term_name)[0]
+        if not analysis_id:
+            m = FastqFilesMetadata(term=term, fastq_id=fastq_id, value=value)
+            m.save()
+        else:
+            m = FastqFilesMetadata(term=term, fastq_id=fastq_id, value=value, analysis_id=analysis_id)
+            m.save()
             
     def add_QC_report(self, run_name, run_path):
         
@@ -168,7 +165,38 @@ class DB:
         self.cursor.execute(sql, (run_path, run_name))
         self.conn.commit()
     
-    
+    def insert_fastq(self, 
+                    fastq_prefix, 
+                    run_id, 
+                    R1, 
+                    R2):
+
+        # use UPSEART: update in case of unique constrain conflict
+        #  ON CONFLICT(run_id, fastq_prefix) DO UPDATE SET
+        #control_sample  R1 R2 run_id fastq_prefix
+        sql_template = f'''insert into GEN_fastqfiles (control_sample,fastq_prefix,run_id,R1,R2) 
+                            values (?,?,?,?,?) ON CONFLICT(run_id, fastq_prefix) DO UPDATE SET 
+                            control_sample=?,
+                            R1=?,
+                            R2=?
+                        '''
+        if "control" in fastq_prefix:
+            control = 1
+        else:
+            control = 0
+        # insert 
+        self.cursor.execute(sql_template, (control, 
+                                           fastq_prefix, 
+                                           run_id, 
+                                           R1, 
+                                           R2,
+                                           control,
+                                           R1,
+                                           R2))
+        self.conn.commit()
+        
+        return self.cursor.lastrowid
+
     def get_sample2species(self, sample_list):
         
         sample_list_filter = '","'.join(sample_list)
