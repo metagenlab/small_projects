@@ -135,9 +135,8 @@ def write_snakemake_config_file(analysis_name,
 
 def backup(execution_folder, 
            backup_folder,
-           analysis_name, 
            file_or_folder_list,
-           analysis_id,
+           analysis_id=False,
            analysis_metadata={}):
     
     '''
@@ -149,15 +148,14 @@ def backup(execution_folder,
     
     import shutil
     
-    # update status
-    gendb_utils.add_analysis_metadata(analysis_id, "airflow_execution_status", "running", update=True)
-    
-    execution_dir = os.path.join(execution_folder, analysis_name)
-    backup_dir = os.path.join(backup_folder, analysis_name)
+    if analysis_id:
+        # update status
+        gendb_utils.add_analysis_metadata(analysis_id, "airflow_execution_status", "running", update=True)
+
     
     for output in file_or_folder_list:
-        original = os.path.join(execution_dir, output)
-        target = os.path.join(backup_dir, output)
+        original = os.path.join(execution_folder, output)
+        target = os.path.join(backup_folder, output)
         print("original", original)
         print("target", target)
         if os.path.isdir(original):

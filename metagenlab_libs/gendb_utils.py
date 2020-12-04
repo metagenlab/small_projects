@@ -24,8 +24,8 @@ class DB:
         
         sql = f'''select t1.id,value from GEN_fastqfiles t1
                   inner join GEN_fastqfilesmetadata t2 on t1.id=t2.fastq_id
-                  inner join GEN_term t3 on t2.metric_id=t3.id
-                  where metric_name="{metric_name}";'''
+                  inner join GEN_term t3 on t2.term_id=t3.id
+                  where t3.name="{metric_name}";'''
                   
         print(sql)
 
@@ -63,19 +63,7 @@ class DB:
         print(sql)
     
         return self.cursor.execute(sql,).fetchall()
-    
-    def get_fastq_metadata(self, fastq_id_list):
-        
-        fastq_list_filter = '","'.join([str(i) for i in fastq_id_list])
-        # left join because some fastq won't have match in the sample table
-        sql = f'''select t1.id as fastq_id,fastq_prefix,R1,R2,species_name from GEN_fastqfiles t1 
-                left join GEN_fastqtosample t2 on t1.id=t2.fastq_id
-                left join GEN_sample t3 on t2.sample_id=t3.id 
-                where t1.id in ("{fastq_list_filter}");
-            '''
-        
-        return pandas.read_sql(sql, self.conn)
-    
+      
     
     def get_run_table(self,):
         
