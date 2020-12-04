@@ -790,6 +790,9 @@ class DB:
         sql = f"update biodb_config set status={status_val} where name={quote(status_name)};"
         self.server.adaptor.execute(sql,)
 
+    def get_config_table(self):
+        pass
+
     def create_biosql_database(self, args):
         self.server.new_database(self.db_name)
 
@@ -1312,29 +1315,52 @@ class DB:
         )
         results = self.server.adaptor.execute_and_fetchall(query, lookup_term)
         df = DB.to_pandas_frame(results, ["bioentry", "orthogroup", "count"])
+        if len(df.index) == 0:
+            return df
+
         df = df.set_index(["bioentry", "orthogroup"]).unstack(level=0, fill_value=0)
         df.columns = [col for col in df["count"].columns.values]
         return df
 
 
-    def get_genes_from_og(self, orthogroups, bioentries):
-        bioentry_entries = ",".join("?" for entry in bioentries)
+    def get_genes_from_og(self, orthogroups, bioentries=None, terms=["gene", "product"]):
+        for term in terms:
+            if term not in ["length", "gene", "product"]:
+                raise RuntimeError(f"Term not supported: {term}")
+
         og_entries = ",".join("?" for og in orthogroups)
+        query_args = orthogroups
+
+        db_terms = [t for t in terms if t!="length"]
+        if "length" in terms:
+            db_terms.append("translation")
+        sel_terms = ",".join("\"" + f"{i}" + "\"" for i in db_terms)
+        join, sel = "", ""
+        if bioentries != None:
+            bioentry_entries = ",".join("?" for entry in bioentries)
+            join = "INNER JOIN seqfeature AS seq ON og.seqid=seq.seqfeature_id "
+            sel = f"AND seq.bioentry_id IN ({bioentry_entries})"
+            query_args = bioentries+orthogroups
         
-        # NOTE: left outer because biosql does not insert any entry
-        # for genes that have not been named, but we still want those entries
         query = (
-            "SELECT og.orthogroup, gene.value, prod.value "
+            f"SELECT feature.seqfeature_id, og.orthogroup, t.name, "
+            "   CASE WHEN t.name==\"translation\" THEN "
+            "   LENGTH(value) ELSE value END "
             "FROM og_hits AS og "
-            "LEFT OUTER JOIN seqfeature_qualifier_value AS gene ON og.seqid=gene.seqfeature_id "
-            " INNER JOIN term AS gene_term ON gene_term.term_id=gene.term_id AND gene_term.name=\"gene\""
-            "INNER JOIN seqfeature_qualifier_value AS prod ON og.seqid=prod.seqfeature_id "
-            " INNER JOIN term AS prod_term ON prod_term.term_id=prod.term_id AND prod_term.name=\"product\""
-            "INNER JOIN seqfeature AS seq ON og.seqid=seq.seqfeature_id "
-            f"WHERE seq.bioentry_id IN ({bioentry_entries}) AND og.orthogroup IN ({og_entries});"
+            "INNER JOIN seqfeature_qualifier_value AS feature ON og.seqid = feature.seqfeature_id "
+            f"INNER JOIN term AS t ON t.term_id=feature.term_id AND t.name IN ({sel_terms})"
+            f"{join}"
+            f"WHERE og.orthogroup IN ({og_entries}) {sel};"
         )
-        results = self.server.adaptor.execute_and_fetchall(query, bioentries+orthogroups)
-        return DB.to_pandas_frame(results, ["orthogroup", "gene", "product"])
+        results = self.server.adaptor.execute_and_fetchall(query, query_args)
+        df = DB.to_pandas_frame(results, columns=["seqid", "og", "term", "value"])
+        df = df.set_index(["og", "seqid", "term"]).unstack("term", fill_value=None)
+        df.columns = ["length" if col=="translation" else col for col in df["value"].columns.values]
+
+        for t in terms:
+            if t not in df.columns:
+                df[t] = None
+        return df
 
 
     # NOTE: should be removed (and use get_cog_hits)
