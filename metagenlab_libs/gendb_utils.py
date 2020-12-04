@@ -20,11 +20,11 @@ class DB:
         self.conn = sqlite3.connect(self.db_path)
         self.cursor = self.conn.cursor()
         
-    def get_fastq_qc_metric(self, metric_name):
+    def get_fastq_metadata(self, metric_name):
         
-        sql = f'''select t1.id,metric_value from GEN_fastqfiles t1
-                  inner join GEN_runsqc t2 on t1.id=t2.fastq_id
-                  inner join GEN_qcmetrics t3 on t2.metric_id=t3.id
+        sql = f'''select t1.id,value from GEN_fastqfiles t1
+                  inner join GEN_fastqfilesmetadata t2 on t1.id=t2.fastq_id
+                  inner join GEN_term t3 on t2.metric_id=t3.id
                   where metric_name="{metric_name}";'''
                   
         print(sql)
@@ -107,26 +107,6 @@ class DB:
             '''
         return {i[0]: i[1] for i in self.cursor.execute(sql,).fetchall()}
     
-    def add_metrics(self, metrics_name):
-        
-        sql = f'insert into GEN_qcmetrics(metric_name) values(?)'
-        self.cursor.execute(sql, [metrics_name])
-        self.conn.commit()
-        
-        return self.cursor.lastrowid
-        
-    
-    def get_metrics_name2metrics_id(self, metrics_list):
-        
-        metrics_filter = '","'.join(metrics_list)
-        sql = f'select metric_name,id from GEN_qcmetrics where metric_name in ("{metrics_filter}")'   
-        dico = {i[0]:i[1] for i in self.cursor.execute(sql,)}
-                
-        for metric in metrics_list:
-            if metric not in dico:
-                dico[metric] = self.add_metrics(metric)
-        
-        return dico
         
     def fastq_prefix2fastq_id(self,fastq_prefix_list):
         
