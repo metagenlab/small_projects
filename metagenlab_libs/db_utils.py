@@ -1340,7 +1340,7 @@ class DB:
             bioentry_entries = ",".join("?" for entry in bioentries)
             join = "INNER JOIN seqfeature AS seq ON og.seqid=seq.seqfeature_id "
             sel = f"AND seq.bioentry_id IN ({bioentry_entries})"
-            query_args = bioentries+orthogroups
+            query_args = orthogroups+bioentries
         
         query = (
             f"SELECT feature.seqfeature_id, og.orthogroup, t.name, "
@@ -1353,10 +1353,12 @@ class DB:
             f"WHERE og.orthogroup IN ({og_entries}) {sel};"
         )
         results = self.server.adaptor.execute_and_fetchall(query, query_args)
-        df = DB.to_pandas_frame(results, columns=["seqid", "og", "term", "value"])
-        df = df.set_index(["og", "seqid", "term"]).unstack("term", fill_value=None)
-        df.columns = ["length" if col=="translation" else col for col in df["value"].columns.values]
+        df = DB.to_pandas_frame(results, columns=["seqid", "orthogroup", "term", "value"])
+        df = df.set_index(["orthogroup", "seqid", "term"]).unstack("term", fill_value=None)
+        if "value" in df.columns:
+            df.columns = ["length" if col=="translation" else col for col in df["value"].columns.values]
 
+        df = df.reset_index(level=0)
         for t in terms:
             if t not in df.columns:
                 df[t] = None
