@@ -23,6 +23,13 @@ class EteTree:
         self.columns = []
         self.leaves_name = None
 
+    def default_tree(nwck, **drawing_params):
+        t = Tree(nwck)
+        mid_point = t.get_midpoint_outgroup()
+        t.set_outgroup(mid_point)
+        t.ladderize()
+        return EteTree(t, **drawing_params)
+
     def add_column(self, face):
         self.columns.append(face)
 
@@ -77,20 +84,7 @@ class Column:
         face.vt_align = 1
         return face
 
-class SimpleColorColumn(Column):
-    def __init__(self, values, header=None):
-        self.values = values
-        self.header = header
-
-    def get_face(self, index):
-        val = self.values.get(index, 0)
-        text_face = TextFace(val)
-
-        # to recode
-        if val != 0 and index in self.values:
-            text_face.inner_background.color = EteTree.BLUE
-
-        # should be put somewhere else
+    def set_default_params(self, text_face):
         text_face.margin_top = 2
         text_face.margin_right = 2
         text_face.margin_left = 2
@@ -99,10 +93,36 @@ class SimpleColorColumn(Column):
         text_face.vt_align = 1
         text_face.border.width = 3
         text_face.border.color = "#ffffff"
+
+
+class SimpleColorColumn(Column):
+    def __init__(self, values, header=None):
+        self.values = values
+        self.header = header
+
+    def fromSeries(series, header=None):
+        values = series.to_dict()
+        col_header = header if header!=None else series.name
+        return SimpleColorColumn(values, header=col_header)
+
+    def get_face(self, index):
+        val = self.values.get(index, 0)
+        text_face = TextFace(val)
+
+        # to recode
+        if val != 0 and index in self.values:
+            text_face.inner_background.color = EteTree.BLUE
+        self.set_default_params(text_face)
         return text_face
 
 class ModuleCompletenessColumn(Column):
-
+    """
+    Straightforward class: 
+    * the values contains the number of missing KO for a complete module
+    * the text_face are colored according to the number of missing KOs:
+    *  - none missing: green
+    *  - missing KOs: orange
+    """
     def __init__(self, values, header=None):
         self.values = values
         self.header = header
@@ -115,16 +135,42 @@ class ModuleCompletenessColumn(Column):
             text_face.inner_background.color = EteTree.GREEN
         else:
             text_face.inner_background.color = EteTree.ORANGE
-
-        text_face.margin_top = 2
-        text_face.margin_right = 10
-        text_face.margin_left = 10
-        text_face.margin_bottom = 2
-        text_face.hz_align = 1
-        text_face.vt_align = 1
-        text_face.border.width = 3
-        text_face.border.color = "#ffffff"
+        self.set_default_params(text_face)
         return text_face
+
+class KOAndCompleteness(Column):
+    """
+    This class should be used when displaying the number of KO
+    in a module. The text faces are then colored according to the
+    number of missing KOs in a module. 
+    If the module is complete (0 missing): text face is green
+    If the module lacks some KOs: text face is orange
+    """
+
+    def __init__(self, n_kos, n_missing_kos, module):
+        """
+        The values should have two columns: 
+        * one for the number of ko in the module
+        * one for the number of missing kos
+        """
+        self.values = n_kos
+        self.n_missing = n_missing_kos
+        self.header = module
+
+    def get_face(self, index):
+        val = self.values.get(index, "-")
+        if val==0:
+            val = "-"
+        n_missing = self.n_missing.get(index, None)
+        text_face = TextFace(val)
+
+        if n_missing!=None and val!="-":
+            color = EteTree.GREEN if n_missing==0 else EteTree.ORANGE
+            text_face.inner_background.color = color
+
+        super().set_default_params(text_face)
+        return text_face
+
 
 class ReferenceColumn(Column):
     def __init__(self, values):
