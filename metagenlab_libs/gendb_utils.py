@@ -1,14 +1,15 @@
 import pandas
 from django.conf import settings
-try:
-    import GEN_database.settings as GEN_settings
+import GEN_database.settings as GEN_settings
 
+try:
     settings.configure(INSTALLED_APPS=GEN_settings.INSTALLED_APPS,
-                    DATABASES=GEN_settings.DATABASES)
+                       DATABASES=GEN_settings.DATABASES)
 
     import django
     django.setup()
 except:
+    print("django setup failed-- already done?")
     pass
 
 class DB:
