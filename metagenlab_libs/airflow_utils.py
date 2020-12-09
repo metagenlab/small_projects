@@ -113,7 +113,8 @@ def write_snakemake_config_file(analysis_name,
     # if references, prepare list
     if reference_list:
         reference_fastq_list = reference_list.split(",")
-        fastq_df = gen_db.get_fastq_metadata(reference_fastq_list)
+        fastq_df = gen_db.get_fastq_and_sample_data(reference_fastq_list)
+        
         ref_list = []
         for n, row in fastq_df.iterrows():
             fastq_id = row["fastq_id"]

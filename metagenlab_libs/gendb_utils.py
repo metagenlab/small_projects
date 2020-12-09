@@ -32,6 +32,21 @@ class DB:
 
         return {str(i[0]):i[1] for i in self.cursor.execute(sql,).fetchall()}
 
+    
+    def get_fastq_and_sample_data(self, fastq_id_list):
+        
+        fastq_list_filter = '","'.join([str(i) for i in fastq_id_list])
+        
+        # left join because some fastq won't have match in the sample table
+        sql = f'''select t1.id as fastq_id,fastq_prefix,R1,R2,species_name from GEN_fastqfiles t1 
+                left join GEN_fastqtosample t2 on t1.id=t2.fastq_id
+                left join GEN_sample t3 on t2.sample_id=t3.id 
+                where t1.id in ("{fastq_list_filter}");
+            '''
+        
+        return pandas.read_sql(sql, self.conn)
+
+
     def get_analysis_metadata(self, term_name):
         
         sql = f"""select t1.analysis_id,value from GEN_analysismetadata t1 
