@@ -62,7 +62,7 @@ def write_sample_file(gen_db,
         fastq_list = fastq_list.split(",")
     
     # id,fastq_prefix,R1,R2,species_name
-    fastq_df = gen_db.get_fastq_metadata(fastq_list)
+    fastq_df = gen_db.get_fastq_and_sample_data(fastq_list)
     
     run_execution_folder = os.path.join(execution_folder, analysis_name)
     
