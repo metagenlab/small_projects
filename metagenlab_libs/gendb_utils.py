@@ -149,37 +149,25 @@ class DB:
         self.cursor.execute(sql, (run_path, run_name))
         self.conn.commit()
     
-    def insert_fastq(self, 
-                    fastq_prefix, 
-                    run_id, 
-                    R1, 
-                    R2):
+    def insert_or_get_fastq(self, 
+                            fastq_prefix, 
+                            run_id, 
+                            R1, 
+                            R2):
+        from GEN.models import FastqFiles
 
-        # use UPSEART: update in case of unique constrain conflict
-        #  ON CONFLICT(run_id, fastq_prefix) DO UPDATE SET
-        #control_sample  R1 R2 run_id fastq_prefix
-        sql_template = f'''insert into GEN_fastqfiles (control_sample,fastq_prefix,run_id,R1,R2) 
-                            values (?,?,?,?,?) ON CONFLICT(run_id, fastq_prefix) DO UPDATE SET 
-                            control_sample=?,
-                            R1=?,
-                            R2=?
-                        '''
         if "control" in fastq_prefix:
             control = 1
         else:
             control = 0
         # insert 
-        self.cursor.execute(sql_template, (control, 
-                                           fastq_prefix, 
-                                           run_id, 
-                                           R1, 
-                                           R2,
-                                           control,
-                                           R1,
-                                           R2))
-        self.conn.commit()
+        fastq = FastqFiles.objects.get_or_create(control_sample=control,
+                                                 fastq_prefix=fastq_prefix,
+                                                 run_id=run_id,
+                                                 R1=R1,
+                                                 R2=R2)[0]
         
-        return self.cursor.lastrowid
+        return fastq.id
 
     def get_sample2species(self, sample_list):
         
