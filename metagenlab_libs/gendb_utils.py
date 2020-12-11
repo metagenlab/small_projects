@@ -68,9 +68,10 @@ class DB:
             sample_id = None 
         return sample_id
 
-    def get_sample_id(self, sample_name):
-        sql = 'select id from GEN_sample where sample_name=?'
-        return self.cursor.execute(sql,(sample_name,)).fetchall()[0][0]
+    def get_sample_id(self, sample_xls_id):
+        sql = 'select id from GEN_sample where xlsx_sample_ID=?'
+
+        return self.cursor.execute(sql,(sample_xls_id,)).fetchall()[0][0]
 
 
     def add_sample_to_fastq_relation(self, fastq_id, sample_id):
@@ -109,7 +110,7 @@ class DB:
     def insert_sample(self,
                       col_names,
                       values_list,
-                      sample_name):
+                      sample_xls_id):
         
         update_str = '%s=?'
 
@@ -127,7 +128,7 @@ class DB:
         self.cursor.execute(sql_template, values_list + values_list)
         self.conn.commit()
 
-        return self.get_sample_id(sample_name)
+        return self.get_sample_id(sample_xls_id)
   
 
     def match_sample_to_fastq(self, sample_prefix):
