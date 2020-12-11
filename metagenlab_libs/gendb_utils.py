@@ -52,12 +52,93 @@ class DB:
         sql = f"""select t1.analysis_id,value from GEN_analysismetadata t1 
                   inner join GEN_term t2 on t1.term_id =t2.id 
                   where t2.name like '{term_name}';"""
-                  
-        print(sql)
 
         return {int(i[0]):i[1] for i in self.cursor.execute(sql,).fetchall()}
 
+
+    def get_run_name2run_id(self,):
+        sql = 'select run_name,id from GEN_runs'
+        return {int(i[0]):i[1] for i in self.cursor.execute(sql,).fetchall()}
+
+    def match_fastq_to_sample(fastq_prefix):
+        sql = f'select id from GEN_sample where sample_name="{fastq_prefix}"' 
+        try:
+            sample_id = self.cursor.execute(sql,).fetchall()[0][0]
+        except:
+            sample_id = None 
+        return sample_id
+
+    def get_sample_id(self, sample_name):
+        sql = 'select id from GEN_sample where sample_name=?'
+        return self.cursor.execute(sql,(sample_name)).fetchall()[0][0]
+
+
+    def add_sample_to_fastq_relation(self, fastq_id, sample_id):
+        
+            # ignore if relation already known
+            sql2 = 'insert or ignore into GEN_fastqtosample(fastq_id, sample_id) values(?,?)'
+            
+            self.cursor.execute(sql2, 
+                               (fastq_id,sample_id))
+
+
+    def insert_run(self,
+                   run_name,
+                   run_date,
+                   assay,
+                   read_length,
+                   paired,
+                   filearc_folder):
+        
+        sql = '''INSERT into GEN_runs (run_name, run_date, assay, read_length, paired, filearc_folder) values(?,?,?,?,?,?) 
+            ON CONFLICT(GEN_runs.run_name) DO UPDATE SET run_date=?, assay=?, read_length=?, paired=?, filearc_folder=?;
+        '''
+        self.cursor.execute(sql, [run_name,
+                                  run_date,
+                                  assay,
+                                  read_length,
+                                  paired, 
+                                  filearc_folder,
+                                  run_date,
+                                  assay,
+                                  read_length,
+                                  paired, 
+                                  filearc_folder])
+
+
+    def insert_sample(self,
+                      col_names,
+                      values_list,
+                      sample_name):
+        
+        update_str = '%s=?'
+
+        update_str_comb = ','.join([update_str % colname for colname in col_names])
+        # INSERT into GEN_sample(xlsx_sample_ID,species_name,date_received,sample_name,sample_type,analysis_type,description,molis_id,myseq_passage,run_date,date_registered,date_sample_modification,user_creation_id,user_modification_id) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(GEN_sample.xlsx_sample_ID) DO UPDATE SET xlsx_sample_ID=?,species_name=?,date_received=?,sample_name=?,sample_type=?,analysis_type=?,description=?,molis_id=?,myseq_passage=?,run_date=?,date_registered=?,date_sample_modification=?,user_creation_id=?,user_modification_id=?;
+        # [29, 'Staphylococcus aureus', False, nan, 'strain', 'research', nan, 1306182530, nan, False, '2020-09-02', '2020-09-02', 2, 2, 29, 'Staphylococcus aureus', False, nan, 'strain', 'research', nan, 1306182530, nan, False, '2020-09-02', '2020-09-02', 2, 2]            
+        # update all columns in case of conflict with xlsx_sample_id
+        
+        # NOTE: xlsx_sample_ID used as reference: if a row is updated in the xlsx table, the corresponding row is updated in the sql table
+        sql_template = 'INSERT into GEN_sample(%s) values(%s)' \
+                       ' ON CONFLICT(GEN_sample.xlsx_sample_ID) DO UPDATE SET %s;' % (','.join(col_names),
+                                                                                      ','.join(['?']*len(col_names)),
+                                                                                      update_str_comb)
+               
+        self.cursor.execute(sql_template, values_list + values_list)
+        self.conn.commit()
+
+        return self.get_sample_id(sample_name)
   
+
+    def match_sample_to_fastq(self, sample_prefix):
+        sql = 'select id from GEN_fastqfiles where fastq_prefix=?' 
+        try:
+            fastq_id = self.cursor.execute(sql,(sample_prefix)).fetchall()[0][0]
+        except:
+            fastq_id = None 
+        return fastq_id
+
+
     def get_fastq(self, run_name=False):
         
         sql = 'select run_name,date_run,qc,fastq_prefix,xlsx_sample_ID,species_name,date_received,read_length,t1.id from GEN_fastqfiles t1 ' \
