@@ -49,11 +49,13 @@ def make_run_dir(execution_folder,
     
     return folder_name
 
-def write_sample_file(gen_db,
+def write_sample_file(gen_db_path,
                       fastq_list,
                       analysis_name, 
                       execution_folder,
                       analysis_id):
+    
+    GEN_DB = gendb_utils.DB(gen_db_path)
     
     # update status
     gendb_utils.add_analysis_metadata(analysis_id, "airflow_execution_status", "running", update=True)
@@ -62,7 +64,7 @@ def write_sample_file(gen_db,
         fastq_list = fastq_list.split(",")
     
     # id,fastq_prefix,R1,R2,species_name
-    fastq_df = gen_db.get_fastq_and_sample_data(fastq_list)
+    fastq_df = GEN_DB.get_fastq_and_sample_data(fastq_list)
     
     run_execution_folder = os.path.join(execution_folder, analysis_name)
     
@@ -90,20 +92,22 @@ def write_snakemake_config_file(analysis_name,
                                 fastq_list,
                                 execution_folder,
                                 snakemake_config,
-                                gen_db,
+                                gen_db_path,
                                 analysis_id,
                                 reference_list=False,
                                 scientific_name=False,
                                 check_single_species=False,
                                 reference_docx=False):
 
+    GEN_DB = gendb_utils.DB(gen_db_path)
+    
     # update status
     gendb_utils.add_analysis_metadata(analysis_id, "airflow_execution_status", "running", update=True)
 
     run_execution_folder = os.path.join(execution_folder, analysis_name)
     
     if check_single_species and not scientific_name:
-        species_list = list(set(gen_db.get_fastq_id2species(fastq_list.split(",")).values()))
+        species_list = list(set(GEN_DB.get_fastq_id2species(fastq_list.split(",")).values()))
     if check_single_species:
         if len(species_list) > 1:
             raise IOError("More than one different species in the dataset: %s" % ','.join(species_list))
@@ -113,7 +117,7 @@ def write_snakemake_config_file(analysis_name,
     # if references, prepare list
     if reference_list:
         reference_fastq_list = reference_list.split(",")
-        fastq_df = gen_db.get_fastq_and_sample_data(reference_fastq_list)
+        fastq_df = GEN_DB.get_fastq_and_sample_data(reference_fastq_list)
         
         ref_list = []
         for n, row in fastq_df.iterrows():

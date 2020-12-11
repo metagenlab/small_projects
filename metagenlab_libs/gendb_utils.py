@@ -58,7 +58,7 @@ class DB:
 
     def get_run_name2run_id(self,):
         sql = 'select run_name,id from GEN_runs'
-        return {int(i[0]):i[1] for i in self.cursor.execute(sql,).fetchall()}
+        return {i[0]:i[1] for i in self.cursor.execute(sql,).fetchall()}
 
     def match_fastq_to_sample(fastq_prefix):
         sql = f'select id from GEN_sample where sample_name="{fastq_prefix}"' 
@@ -70,7 +70,7 @@ class DB:
 
     def get_sample_id(self, sample_name):
         sql = 'select id from GEN_sample where sample_name=?'
-        return self.cursor.execute(sql,(sample_name)).fetchall()[0][0]
+        return self.cursor.execute(sql,(sample_name,)).fetchall()[0][0]
 
 
     def add_sample_to_fastq_relation(self, fastq_id, sample_id):
@@ -133,7 +133,7 @@ class DB:
     def match_sample_to_fastq(self, sample_prefix):
         sql = 'select id from GEN_fastqfiles where fastq_prefix=?' 
         try:
-            fastq_id = self.cursor.execute(sql,(sample_prefix)).fetchall()[0][0]
+            fastq_id = self.cursor.execute(sql,(sample_prefix,)).fetchall()[0][0]
         except:
             fastq_id = None 
         return fastq_id
