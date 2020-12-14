@@ -38,7 +38,9 @@ class DB:
         fastq_list_filter = '","'.join([str(i) for i in fastq_id_list])
         
         # left join because some fastq won't have match in the sample table
-        sql = f'''select t1.id as fastq_id,fastq_prefix,R1,R2,species_name from GEN_fastqfiles t1 
+        # possible problem: fastq prefix match with multiple samples from different species
+        # in that case: remove species name
+        sql = f'''select distinct t1.id as fastq_id,fastq_prefix,R1,R2,species_name from GEN_fastqfiles t1 
                 left join GEN_fastqtosample t2 on t1.id=t2.fastq_id
                 left join GEN_sample t3 on t2.sample_id=t3.id 
                 where t1.id in ("{fastq_list_filter}");
@@ -81,6 +83,8 @@ class DB:
             
             self.cursor.execute(sql2, 
                                (fastq_id,sample_id))
+            
+            self.conn.commit()
 
 
     def insert_run(self,
@@ -105,7 +109,7 @@ class DB:
                                   read_length,
                                   paired, 
                                   filearc_folder])
-
+        self.conn.commit()
 
     def insert_sample(self,
                       col_names,
