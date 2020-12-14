@@ -62,7 +62,7 @@ class DB:
         sql = 'select run_name,id from GEN_runs'
         return {i[0]:i[1] for i in self.cursor.execute(sql,).fetchall()}
 
-    def match_fastq_to_sample(fastq_prefix):
+    def match_fastq_to_sample(self, fastq_prefix):
         sql = f'select id from GEN_sample where sample_name="{fastq_prefix}"' 
         try:
             sample_id = self.cursor.execute(sql,).fetchall()[0][0]
