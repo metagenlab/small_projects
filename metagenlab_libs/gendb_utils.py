@@ -1,5 +1,7 @@
 import pandas
 from django.conf import settings
+
+# setup django do be able to access django db models 
 import GEN_database.settings as GEN_settings
 
 try:
@@ -128,7 +130,9 @@ class DB:
                        ' ON CONFLICT(GEN_sample.xlsx_sample_ID) DO UPDATE SET %s;' % (','.join(col_names),
                                                                                       ','.join(['?']*len(col_names)),
                                                                                       update_str_comb)
-               
+        
+        print(sql_template)
+        print(values_list)
         self.cursor.execute(sql_template, values_list + values_list)
         self.conn.commit()
 
@@ -138,10 +142,10 @@ class DB:
     def match_sample_to_fastq(self, sample_prefix):
         sql = 'select id from GEN_fastqfiles where fastq_prefix=?' 
         try:
-            fastq_id = self.cursor.execute(sql,(sample_prefix,)).fetchall()[0][0]
+            fastq_id_list = [i[0] for i in self.cursor.execute(sql,(sample_prefix,)).fetchall()]
         except:
-            fastq_id = None 
-        return fastq_id
+            fastq_id = [] 
+        return fastq_id_list
 
 
     def get_fastq(self, run_name=False):
@@ -152,7 +156,7 @@ class DB:
             ' left join GEN_sample t4 on t3.sample_id=t4.id'
 
         sql = '''
-        select run_name,t5.status,fastq_prefix,read_length,t3.id,species_name,date_received,t4.run_date,t1.id from GEN_fastqfiles t1 
+        select run_name,t5.status,fastq_prefix,read_length,t3.id,species_name,date_received,t4.run_date,t1.id,t4.qc_id from GEN_fastqfiles t1 
         left join GEN_fastqtosample t2 on t1.id=t2.fastq_id 
         left join GEN_sample t3 on t2.sample_id=t3.id 
         left join GEN_runs t4 on t1.run_id=t4.id

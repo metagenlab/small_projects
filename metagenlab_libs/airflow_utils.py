@@ -124,6 +124,8 @@ def write_snakemake_config_file(analysis_name,
             fastq_id = row["fastq_id"]
             sample_name = f'{row["fastq_prefix"]}_{fastq_id}'
             ref_list.append(sample_name)
+        if 'cgMLST' in reference_fastq_list:
+            ref_list.append("cgMLST")
     
     with open(os.path.join(run_execution_folder, f'{analysis_name}.config'), 'w') as f:
         # update sample table name
@@ -155,6 +157,7 @@ def backup(execution_folder,
     
     if analysis_id:
         # update status
+        print("analysis_id", analysis_id)
         gendb_utils.add_analysis_metadata(analysis_id, "airflow_execution_status", "running", update=True)
 
     
@@ -174,6 +177,13 @@ def backup(execution_folder,
     
     if analysis_metadata:
         for status_entry in analysis_metadata:
+
+            if status_entry == 'snakemake_pipeline_version':
+                # replace by content of the file
+                with open(os.path.join(analysis_metadata[status_entry]["value"]), 'r') as f:
+                    pipeline_version = f.readline().strip().split(" ")[-1]
+                    analysis_metadata[status_entry]["value"] = pipeline_version
+
             gendb_utils.add_analysis_metadata(analysis_metadata[status_entry]["analysis_id"], 
                                               status_entry, 
                                               analysis_metadata[status_entry]["value"], 
@@ -182,18 +192,19 @@ def backup(execution_folder,
 
 def task_fail_slack_alert(context):
 
-    print("task_fail_slack_alert")
-    
-    slack_webhook_token = BaseHook.get_connection(SLACK_CONN_ID).password
-
     dag_run = context.get('dag_run')
     analysis_id = dag_run.conf.get('analysis_id')
     
+    
     if analysis_id:
+        print("Fail, updating analysis status")
         gendb_utils.add_analysis_metadata(analysis_id, "airflow_execution_status", "failed", update=True)
         gendb_utils.update_analysis_status(analysis_id, "failed")
     else:
         print("NO ANALYSE NUMBER")
+
+    print("task_fail_slack_alert")
+    slack_webhook_token = BaseHook.get_connection(SLACK_CONN_ID).password
 
     slack_msg = """
             :red_circle: Task Failed. 
@@ -227,15 +238,17 @@ def task_success_slack_alert(context):
     '''
     Slack message + update analysis status
     '''
-    
-    slack_webhook_token = BaseHook.get_connection(SLACK_CONN_ID).password
 
     dag_run = context.get('dag_run')
     analysis_id = dag_run.conf.get('analysis_id')
 
     if analysis_id:
+        print("Success, updating db")
         gendb_utils.add_analysis_metadata(analysis_id, "airflow_execution_status", "success", update=True)
         gendb_utils.update_analysis_status(analysis_id, "success")
+
+    print("slack message")
+    slack_webhook_token = BaseHook.get_connection(SLACK_CONN_ID).password
 
     slack_msg = """
             :heavy_check_mark: Dag Success. 
@@ -259,3 +272,4 @@ def task_success_slack_alert(context):
         username='airflow')
 
     return success_alert.execute(context=context)
+
