@@ -863,24 +863,41 @@ class DB:
             gc_term_id = result[0][0]
         return gc_term_id
 
-    def get_genomes_description(self, entries=None, indexing="bioentry", exclude_plasmids=False,
-            indexing_type="str"):
-        if indexing != "bioentry" and indexing != "accession":
-            raise RuntimeError(f"{bioentry} indexing is not supported")
-
+    def get_genomes_description(self, entries=None, exclude_plasmids=False, indexing_type="str"):
         if indexing_type != "int" and indexing_type != "str":
             raise RuntimeError(f"{indexing_type} not supported, must be int or str")
 
-        entry_filter = ""
+        where_cause_entry = ""
         if entries != None:
-            string = ",".join(["?"] * len(entries))
-            entry_filter = f"WHERE bioentry_id IN ({string}) "
+            string = ",".join("?" for i in entries)
+            where_cause_entry = f"bioentry_id IN ({string}) "
 
-        selection = ("accession", "bioentry_id")[indexing=="bioentry"]
+        exclusion_query = ""
+        if exclude_plasmids:
+            exclusion_query = (
+                "INNER JOIN bioentry_qualifier_value AS plasmid "
+                "   ON plasmid.bioentry_id = entry.bioentry_id "
+                "INNER JOIN term AS plasmid_term "
+                "   ON plasmid_term.term_id=plasmid.term_id "
+                "   AND plasmid_term.name = \"plasmid\" "
+            )
+            where_clause_plasmid = " plasmid.value = 0 "
+
+        where_clause = ""
+        if entries!=None or exclude_plasmids:
+            tokens = []
+            if entries!=None:
+                tokens.append(where_clause_entry)
+            if exclude_plasmids:
+                tokens.append(where_clause_plasmid)
+            where_clauses = " AND ".join(tokens)
+            where_clause = f"WHERE {where_clauses} "
+
         query = (
-            f"SELECT {selection}, description "
-            " FROM bioentry "
-            f"{entry_filter}"
+            f"SELECT entry.bioentry_id, entry.description "
+            " FROM bioentry AS entry "
+            f"{exclusion_query}"
+            f"{where_clause}"
             " ORDER BY description;"
         )
         if entries == None:
@@ -890,8 +907,6 @@ class DB:
 
         hsh_results = {}
         for line in results:
-            if exclude_plasmids and ("plasmid" in line[1] or "phage" in line[1]):
-                continue
             idx = line[0] if indexing_type == "int" else str(line[0])
             hsh_results[idx] = line[1].strip()
         return hsh_results
@@ -1524,6 +1539,17 @@ class DB:
         self.server.adaptor.execute(sql)
         self.load_data_into_table("biodb_config", entries)
 
+
+    def update_plasmid_status(self, plasmid_bioentries):
+        results = self.server.adaptor.execute_and_fetchall("SELECT term_id FROM term WHERE name=\"plasmid\";")
+        plasmid_term_id = results[0][0]
+        sql = (
+            "INSERT INTO bioentry_qualifier_value VALUES  "
+            " (?, ?, ?, 0);"
+        )
+        data = [(bioentry_id, plasmid_term_id, is_plasmid)
+                for bioentry_id, is_plasmid in plasmid_bioentries]
+        self.server.adaptor.executemany(sql, data)
 
     # wrapper methods
     def commit(self):
