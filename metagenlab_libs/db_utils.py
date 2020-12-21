@@ -667,18 +667,24 @@ class DB:
             return hsh_results
 
 
-    def get_hsh_locus_to_seqfeature_id(self):
+    def get_hsh_locus_to_seqfeature_id(self, only_CDS=False):
+        filtering = ""
+        if only_CDS:
+            filtering = "INNER JOIN term as t4 ON t4.term_id=t1.type_term_id AND t4.name = \"CDS\" "
+
         query = (
             "SELECT t2.value, t1.seqfeature_id "
             "FROM seqfeature as t1 "
+            f"{filtering}"
             "INNER JOIN seqfeature_qualifier_value AS t2 ON t1.seqfeature_id=t2.seqfeature_id "
-            "INNER JOIN term as t3 on t3.term_id=t2.term_id AND t3.name=\"locus_tag\""
+            "INNER JOIN term as t3 on t3.term_id=t2.term_id AND t3.name=\"locus_tag\" "
         )
         results = self.server.adaptor.execute_and_fetchall(query,)
         hsh_results = {}
         for line in results:
             hsh_results[line[0]] = int(line[1])
         return hsh_results
+
 
     def get_locus_to_og(self):
         query = (
@@ -1307,33 +1313,48 @@ class DB:
             data.append(line)
         return pd.DataFrame(data, columns=columns, dtype=int)
 
+
+    def get_bioentries_in_taxon(self, bioentries=None):
+        query_str = ",".join("?" for entry in bioentries)
+        query = (
+            "SELECT two.bioentry_id "
+            "FROM bioentry AS one "
+            "INNER JOIN bioentry AS two ON one.taxon_id = two.taxon_id "
+            f"WHERE one.bioentry_id IN ({query_str});"
+        )
+        results = self.server.adaptor.execute_and_fetchall(query, bioentries)
+        return [line[0] for line in results]
+
+
     # For each genome, return the number of gene that were assigned
     # to each orthogroup passed in argument
     def get_og_count(self, lookup_term, search_on="orthogroup", indexing="bioentry"):
-        if indexing != "bioentry" and indexing != "taxid":
-            raise RuntimeError("Only bioentry and taxid indexing are supported")
+        if indexing != "bioentry" and indexing != "taxon_id":
+            raise RuntimeError("Only bioentry and taxon_id indexing are supported")
         if search_on!="orthogroup" and search_on!="bioentry":
             raise RuntimeError("Can only search on orthogroup or bioentry")
 
         where_clause = "orthogroup"
         if search_on=="bioentry":
             where_clause = "entry.bioentry_id"
-        
+
+        indexing_term = "feature.bioentry_id" if indexing=="bioentry" else "entry.taxon_id"
+
         entries = ",".join("?" for i in lookup_term)
         query = (
-            "SELECT feature.bioentry_id, orthogroup, count(*) "
+            f"SELECT {indexing_term}, orthogroup, count(*) "
             "FROM bioentry AS entry "
             "INNER JOIN seqfeature AS feature ON entry.bioentry_id = feature.bioentry_id " 
             "INNER JOIN og_hits AS og ON og.seqid = feature.seqfeature_id "
             f"WHERE {where_clause} IN ({entries}) "
-            "GROUP BY feature.bioentry_id, orthogroup;"
+            f"GROUP BY {indexing_term}, orthogroup;"
         )
         results = self.server.adaptor.execute_and_fetchall(query, lookup_term)
-        df = DB.to_pandas_frame(results, ["bioentry", "orthogroup", "count"])
+        df = DB.to_pandas_frame(results, [indexing, "orthogroup", "count"])
         if len(df.index) == 0:
             return df
 
-        df = df.set_index(["bioentry", "orthogroup"]).unstack(level=0, fill_value=0)
+        df = df.set_index([indexing, "orthogroup"]).unstack(level=0, fill_value=0)
         df.columns = [col for col in df["count"].columns.values]
         return df
 
