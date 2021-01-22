@@ -30,6 +30,14 @@ class EteTree:
         t.ladderize()
         return EteTree(t, **drawing_params)
 
+    def pruned_tree(nwck, nodes, **drawing_params):
+        t = Tree(nwck)
+        t.prune([str(i) for i in nodes])
+        mid_point = t.get_midpoint_outgroup()
+        t.set_outgroup(mid_point)
+        t.ladderize()
+        return EteTree(t, **drawing_params)
+
     def add_column(self, face):
         self.columns.append(face)
 

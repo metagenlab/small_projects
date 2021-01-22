@@ -869,17 +869,30 @@ class DB:
             gc_term_id = result[0][0]
         return gc_term_id
 
-    def get_genomes_description(self, entries=None, exclude_plasmids=False, indexing_type="str"):
+    def get_genomes_description(self, entries=None, exclude_plasmids=False,
+            indexing="bioentry", indexing_type="str"):
+        """
+        Returns the description of the genome as it has been read from the genbank
+        files
+        * entries: selects the genomes with the given bioentry_ids, or returns all genomes if None
+        * exclude_plasmids: filters out the plasmids, implied if indexing is taxon_id
+        * indexing: index the description either on bioentry or on taxon ids
+        * indexing_type: the index can either be a str (useful to interact with etree) or as integers
+        """
         if indexing_type != "int" and indexing_type != "str":
             raise RuntimeError(f"{indexing_type} not supported, must be int or str")
 
-        where_cause_entry = ""
+        if indexing!="taxon_id" and indexing!="bioentry":
+            raise RuntimeError(f"{indexing_type} not supported, must be taxon_id or bioentry")
+
+        sel = "entry.bioentry_id" if indexing=="bioentry" else "entry.taxon_id"
+        where_clause_entry = ""
         if entries != None:
             string = ",".join("?" for i in entries)
-            where_cause_entry = f"bioentry_id IN ({string}) "
+            where_clause_entry = f"entry.bioentry_id IN ({string}) "
 
         exclusion_query = ""
-        if exclude_plasmids:
+        if exclude_plasmids or indexing=="taxon_id":
             exclusion_query = (
                 "INNER JOIN bioentry_qualifier_value AS plasmid "
                 "   ON plasmid.bioentry_id = entry.bioentry_id "
@@ -900,7 +913,7 @@ class DB:
             where_clause = f"WHERE {where_clauses} "
 
         query = (
-            f"SELECT entry.bioentry_id, entry.description "
+            f"SELECT {sel}, entry.description "
             " FROM bioentry AS entry "
             f"{exclusion_query}"
             f"{where_clause}"
@@ -1303,27 +1316,30 @@ class DB:
             hsh_results[seqid] = organism
         return hsh_results
 
+
     # Note:
     # First extracting the data in memory and creating the dataframe
     # from it is much faster than iterating over results and adding
     # elements separately
+    #
+    # NOTE: may be interesting to use int8/16 whenever possible 
+    # to spare memory.
     def to_pandas_frame(db_results, columns):
-        data = []
-        for line in db_results:
-            data.append(line)
-        return pd.DataFrame(data, columns=columns, dtype=int)
+        return pd.DataFrame(db_results, columns=columns, dtype=int)
 
 
     def get_bioentries_in_taxon(self, bioentries=None):
+        # NOTE: need to write the code for the base where bioentries is None
+        # -> returns all the entries
         query_str = ",".join("?" for entry in bioentries)
         query = (
-            "SELECT two.bioentry_id "
+            "SELECT two.bioentry_id, one.taxon_id, one.bioentry_id "
             "FROM bioentry AS one "
             "INNER JOIN bioentry AS two ON one.taxon_id = two.taxon_id "
             f"WHERE one.bioentry_id IN ({query_str});"
         )
         results = self.server.adaptor.execute_and_fetchall(query, bioentries)
-        return [line[0] for line in results]
+        return DB.to_pandas_frame(results, ["bioentry", "taxon", "ref_genome_bioentry"])
 
 
     # For each genome, return the number of gene that were assigned
@@ -1401,42 +1417,6 @@ class DB:
         return df
 
 
-    # NOTE: should be removed (and use get_cog_hits)
-    # Note: only takes the best hits into account
-    # Note II: code written on a Friday at 7pm... need to check it thoroughly
-    #
-    # For now, the query identifies the best cog hit for all seqid
-    # where cogs from cog_list are located. The code below the query then only
-    # count the hits that correspond to entries in cog_list.
-    # This may need to be rewritten, especially if we end up choosing to not
-    # include all cog_hits.
-    def get_cog_counts(self, cog_list):
-        entries = ",".join(["?"] * len(cog_list))
-
-        query = (
-            "SELECT feature.bioentry_id, all_hits.cog_id, MIN(all_hits.evalue) "
-            " FROM sequence_hash_dictionnary AS hsh "
-            " INNER JOIN seqfeature AS feature ON hsh.seqid = feature.seqfeature_id "
-            " INNER JOIN cog_hits AS hit ON hsh.hsh = hit.hsh "
-            " INNER JOIN sequence_hash_dictionnary AS all_hsh ON all_hsh.seqid = hsh.seqid "
-            " INNER JOIN cog_hits AS all_hits ON all_hsh.hsh = all_hits.hsh "
-            f"WHERE hit.cog_id IN ({entries}) "
-            " GROUP BY all_hsh.seqid; "
-        )
-        results = self.server.adaptor.execute_and_fetchall(query, cog_list)
-        hsh_results = {}
-        for line in results:
-            bioentry, cog_id = line[0:2]
-            if not cog_id in cog_list:
-                continue
-
-            if bioentry in hsh_results:
-                cnt = hsh_results[bioentry].get(cog_id, 0)
-                hsh_results[bioentry][cog_id] = cnt+1
-            else:
-                hsh_results[bioentry] = {cog_id : 1}
-        return hsh_results
-
     # NOTE: should be modified as selecting the cog with the best value is not
     # necessary anymore
     # For now, only returns the best hits, may be interesting to modify it later
@@ -1463,6 +1443,7 @@ class DB:
                 hsh_results[entry_id][func] = cnt+1
         return hsh_results
 
+
     def get_og(self, seqids, order=True):
         entries = ",".join("?" for i in seqids)
         ordering = ""
@@ -1479,46 +1460,58 @@ class DB:
             hsh_results[line[0]] = line[1]
         return hsh_results
 
+
     # Get all cog hits for a given list of bioentries
     # The results are either indexed by the bioentry or by the seqid
-    def get_cog_hits(self, bioentries, index_by_seqid=False, as_count=False):
-        if index_by_seqid and as_count:
+    # NOTE: if indexing as bioentry or taxon_id, will return a dataframe of the form
+    #           bioentry_1/taxon_1  bioentry_2/taxon_2  ...
+    #   cog_1     cnt                   cnt
+    #   cog_2     cnt                   cnt
+    #   ...
+    #
+    # If the indexing is seqid, will return a dataframe with the format
+    #   
+    #  
+    #
+    def get_cog_hits(self, bioentries, indexing="bioentry"):
+        if indexing=="seqid" and as_count:
             raise RuntimeError("Counting cog per seqid is useless (only best hits are kept)")
 
         entries = ",".join("?" for i in bioentries)
 
-        index = "entry.bioentry_id"
-        if index_by_seqid:
+        if indexing=="seqid":
             index = "seqid.seqfeature_id"
+        elif indexing=="bioentry":
+            index = "entry.bioentry_id"
+        elif indexing=="taxon_id":
+            index = "entry.taxon_id"
+        else:
+            raise RuntimeError(f"Indexing method not supported: {indexing}")
 
-        prefix, suffix = "", ""
-        if as_count:
-            prefix = ", COUNT(*)"
-            suffix = f"GROUP BY entry.bioentry_id, cogs.cog_id "
+        prefix = ""
+        suffix = ""
 
         query = (
-            f"SELECT {index}, cogs.cog_id {prefix}"
+            f"SELECT {index}, cogs.cog_id, COUNT(*) "
             "FROM bioentry AS entry "
             "INNER JOIN seqfeature AS seqid ON seqid.bioentry_id = entry.bioentry_id "
             "INNER JOIN sequence_hash_dictionnary AS hsh ON seqid.seqfeature_id = hsh.seqid "
             "INNER JOIN cog_hits AS cogs ON cogs.hsh = hsh.hsh "
             f"WHERE entry.bioentry_id IN ({entries}) " 
-            f"{suffix};"
+            f"GROUP BY {index}, cogs.cog_id;"
         )
         results = self.server.adaptor.execute_and_fetchall(query, bioentries)
-        if as_count:
-            return DB.to_pandas_frame(results, ["bioentry", "cog", "count"])
+        column_names = [indexing, "cog", "count"]
 
-        hsh_results = {}
-        # legacy code, to be replaced in profit of pandas dataframe
-        for line in results:
-            entry = line[0]
-            cog = line[1]
-            if entry in hsh_results:
-                hsh_results[entry].append(cog)
-            else:
-                hsh_results[entry] = [cog]
-        return hsh_results
+        df = DB.to_pandas_frame(results, column_names)
+        if indexing=="taxon_id" or indexing=="bioentry":
+            df = df.set_index([indexing, "cog"]).unstack(level=0, fill_value=0)
+            df.columns = [col for col in df["count"].columns.values]
+        else:
+            # to implement
+            df = df.set_index([indexing])
+        return df
+
 
     # May need to modify this so it can also index results by bioentry
     def get_all_seqfeature_for_cog(self, cogs):
