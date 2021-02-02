@@ -619,6 +619,19 @@ class DB:
         return hsh_results
 
 
+    def get_ko_hits(self, ids):
+        prot_query = ",".join("?" for i in ids)
+        query = (
+            "SELECT hsh.seqid, hit.ko_id "
+            "FROM sequence_hash_dictionnary AS hsh "
+            "INNER JOIN ko_hits AS hit ON hit.hsh=hsh.hsh "
+            f"WHERE hsh.seqid IN ({prot_query});"
+        )
+        results = self.server.adaptor.execute_and_fetchall(query, ids)
+        df = DB.to_pandas_frame(results, ["seqid", "KO"])
+        return df.set_index(["seqid"])
+
+
     def get_ko_count(self, bioentries, keep_seqids=False):
         if keep_seqids:
             keep_sel = " hsh.seqid, "
@@ -796,8 +809,11 @@ class DB:
         sql = f"update biodb_config set status={status_val} where name={quote(status_name)};"
         self.server.adaptor.execute(sql,)
 
+
     def get_config_table(self):
-        pass
+        sql = "SELECT * from biodb_config;"
+        values = self.server.adaptor.execute_and_fetchall(sql)
+        return {val[0]: val[1] for val in values}
 
     def create_biosql_database(self, args):
         self.server.new_database(self.db_name)
@@ -1220,6 +1236,39 @@ class DB:
                 hsh_results[cog_id].append((func, func_descr, cog_description))
         return hsh_results
 
+
+    def get_CDS_from_locus_tag(self, locus_tag):
+        # NOTE: I did not add a join to filter on locus_tag,
+        # it may be worth it performance-wise to pre-filter the 
+        # database entries if this query were to become an issue.
+
+        query = (
+            "SELECT seqfeature_id "
+            "FROM seqfeature_qualifier_values AS locus_tag "
+            "INNER JOIN seqfeature AS feature ON feature.seqfeature_id=locus_tag.seqfeature_id "
+            "INNER JOIN term AS t ON feature.type_term_id=t.term_id AND t.name = \"CDS\" "
+            "WHERE locus_tag.value=?;"
+        )
+        ret = self.server.execute_and_fetchall(query, locus_tag)
+        if ret==None or len(ret)==0:
+            return None
+        return ret[0][0]
+
+
+    def get_seqid_in_neighborhood(self, bioentry_id, start_loc, stop_loc):
+        query = (
+            "SELECT seqfeature_id "
+            "FROM location AS loc " 
+            "INNER JOIN seqfeature AS seq ON seq.seqfeature_id=loc.seqfeature_id "
+            "  AND seq.bioentry_id= ? "
+            "WHERE loc.start_pos > ? AND loc.start_pos < ?;"
+        )
+        results = self.server.execute_and_fetchall(query, [bioentry_id, start_pos, stop_loc])
+        if results==None:
+            return []
+        return [line[0] for line in results]
+
+
     # Note: ordering by seqid makes it faster to assemble informations
     # from several queries if the index is the same.
     def get_gene_loc(self, seqids, as_hash=True):
@@ -1345,16 +1394,23 @@ class DB:
     # For each genome, return the number of gene that were assigned
     # to each orthogroup passed in argument
     def get_og_count(self, lookup_term, search_on="orthogroup", indexing="bioentry"):
-        if indexing != "bioentry" and indexing != "taxon_id":
-            raise RuntimeError("Only bioentry and taxon_id indexing are supported")
-        if search_on!="orthogroup" and search_on!="bioentry":
-            raise RuntimeError("Can only search on orthogroup or bioentry")
+        if indexing=="bioentry":
+            indexing_term = "feature.bioentry_id"
+        elif indexing=="taxon_id":
+            indexing_term = "entry.taxon_id"
+        elif indexing=="seqid":
+            indexing_term = "og.seqid"
+        else:
+            raise RuntimeError(f"Unsupported index {search_on}, must use taxon_id, bioentry or seqid")
 
-        where_clause = "orthogroup"
         if search_on=="bioentry":
             where_clause = "entry.bioentry_id"
-
-        indexing_term = "feature.bioentry_id" if indexing=="bioentry" else "entry.taxon_id"
+        elif search_on=="seqid":
+            where_clause = "og.seqid"
+        elif search_on=="orthogroup":
+            where_clause = "og.orthogroup"
+        else:
+            raise RuntimeError(f"Unsupported search {search_on}, must use orthogroup, bioentry or seqid")
 
         entries = ",".join("?" for i in lookup_term)
         query = (
@@ -1370,14 +1426,18 @@ class DB:
         if len(df.index) == 0:
             return df
 
-        df = df.set_index([indexing, "orthogroup"]).unstack(level=0, fill_value=0)
-        df.columns = [col for col in df["count"].columns.values]
+        if indexing=="taxon_id" or indexing=="bioentry":
+            df = df.set_index([indexing, "orthogroup"]).unstack(level=0, fill_value=0)
+            df.columns = [col for col in df["count"].columns.values]
+        elif indexing=="seqid":
+            df = df[[indexing, "orthogroup"]]
+            df = df.set_index([indexing])
         return df
 
 
     def get_genes_from_og(self, orthogroups, bioentries=None, terms=["gene", "product"]):
         for term in terms:
-            if term not in ["length", "gene", "product"]:
+            if term not in ["length", "gene", "product", "locus_tag"]:
                 raise RuntimeError(f"Term not supported: {term}")
 
         og_entries = ",".join("?" for og in orthogroups)
@@ -1470,14 +1530,20 @@ class DB:
     #   ...
     #
     # If the indexing is seqid, will return a dataframe with the format
-    #   
-    #  
-    #
-    def get_cog_hits(self, bioentries, indexing="bioentry"):
-        if indexing=="seqid" and as_count:
-            raise RuntimeError("Counting cog per seqid is useless (only best hits are kept)")
+    #   seqid1 cog1
+    #   seqid2 cog2
+    #   seqid3 cog3
+    def get_cog_hits(self, ids, indexing="bioentry", search_on="bioentry"):
+        entries = ",".join("?" for i in ids)
 
-        entries = ",".join("?" for i in bioentries)
+        if search_on=="bioentry":
+            where_clause = f" entry.bioentry_id IN ({entries}) "
+        elif search_on=="seqid":
+            where_clause = f" hsh.seqid IN ({entries}) "
+        elif search_on=="cog":
+            where_clause = f" cogs.cog_id IN ({entries}) "
+        else:
+            raise RuntimeError(f"Searching on {search_on} is not supported")
 
         if indexing=="seqid":
             index = "seqid.seqfeature_id"
@@ -1488,50 +1554,28 @@ class DB:
         else:
             raise RuntimeError(f"Indexing method not supported: {indexing}")
 
-        prefix = ""
-        suffix = ""
-
         query = (
             f"SELECT {index}, cogs.cog_id, COUNT(*) "
             "FROM bioentry AS entry "
             "INNER JOIN seqfeature AS seqid ON seqid.bioentry_id = entry.bioentry_id "
             "INNER JOIN sequence_hash_dictionnary AS hsh ON seqid.seqfeature_id = hsh.seqid "
             "INNER JOIN cog_hits AS cogs ON cogs.hsh = hsh.hsh "
-            f"WHERE entry.bioentry_id IN ({entries}) " 
+            f"WHERE {where_clause} "
             f"GROUP BY {index}, cogs.cog_id;"
         )
-        results = self.server.adaptor.execute_and_fetchall(query, bioentries)
-        column_names = [indexing, "cog", "count"]
-
-        df = DB.to_pandas_frame(results, column_names)
+        results = self.server.adaptor.execute_and_fetchall(query, ids)
         if indexing=="taxon_id" or indexing=="bioentry":
+            column_names = [indexing, "cog", "count"]
+            df = DB.to_pandas_frame(results, column_names)
             df = df.set_index([indexing, "cog"]).unstack(level=0, fill_value=0)
             df.columns = [col for col in df["count"].columns.values]
-        else:
-            # to implement
+        elif indexing=="seqid":
+            # Should be improved: count is not necessary when using only seqids
+            # and several joins are not necessary anymore.
+            df = DB.to_pandas_frame(results, [indexing, "cog", "count"])
+            df = df[[indexing, "cog"]]
             df = df.set_index([indexing])
         return df
-
-
-    # May need to modify this so it can also index results by bioentry
-    def get_all_seqfeature_for_cog(self, cogs):
-        query_str = ",".join("?" for i in cogs)
-        query = (
-            "SELECT hsh.seqid, hit.cog_id "
-            "FROM cog_hits AS hit "
-            "INNER JOIN sequence_hash_dictionnary AS hsh ON hsh.hsh = hit.hsh "
-            f"WHERE hit.cog_id IN ({query_str}); "
-        )
-        results = self.server.adaptor.execute_and_fetchall(query, cogs)
-
-        hsh_results = {}
-        for line in results:
-            seqid, cog_id = line
-            if cog_id not in cogs:
-                continue
-            assert seqid not in hsh_results
-            hsh_results[seqid] = cog_id
-        return hsh_results
 
 
     def get_filenames_to_bioentry(self):
