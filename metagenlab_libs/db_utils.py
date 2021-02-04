@@ -1376,7 +1376,6 @@ class DB:
     def to_pandas_frame(db_results, columns):
         return pd.DataFrame(db_results, columns=columns, dtype=int)
 
-
     def get_bioentries_in_taxon(self, bioentries=None):
         # NOTE: need to write the code for the base where bioentries is None
         # -> returns all the entries
@@ -1578,15 +1577,19 @@ class DB:
         return df
 
 
-    def get_filenames_to_bioentry(self):
+    def get_filenames_to_bioentry(self, as_taxid=False):
+        if as_taxid:
+            select = "entry.taxon_id"
+        else:
+            select = "file.bioentry_id"
+
         sql = (
-            "SELECT * FROM filenames;"
+            f"SELECT filename, {select} FROM filenames AS file "
+            "INNER JOIN bioentry AS entry ON file.bioentry_id=entry.bioentry_id; "
         )
-        hsh_filenames_to_bioentry = {}
+        hsh_filenames_to_entry = {}
         results = self.server.adaptor.execute_and_fetchall(sql)
-        for line in results:
-            hsh_filenames_to_bioentry[line[1].replace(".gbk", "")] = line[0]
-        return hsh_filenames_to_bioentry
+        return {filename.replace(".gbk", ""): entry_id for filename, entry_id in results}
 
 
     def load_chlamdb_config_tables(self, entries):
