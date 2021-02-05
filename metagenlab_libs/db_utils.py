@@ -797,6 +797,7 @@ class DB:
         query = "CREATE INDEX og_seqid_idx ON og_hits(orthogroup);"
         self.server.adaptor.execute(query)
 
+
     def taxon_ids(self):
         query = "SELECT taxon_id FROM taxon";
         result = self.server.adaptor.execute_and_fetchall(query,)
@@ -804,6 +805,7 @@ class DB:
         for line in result:
             arr_taxon_ids.append(int(line[0]))
         return arr_taxon_ids
+
 
     def set_status_in_config_table(self, status_name, status_val):
         sql = f"update biodb_config set status={status_val} where name={quote(status_name)};"
@@ -1134,16 +1136,15 @@ class DB:
 
     def load_filenames(self, data):
         sql = (
-            "CREATE TABLE filenames (bioentry_id INTEGER, filename TEXT, "
-            " FOREIGN KEY(bioentry_id) REFERENCES bioentry(bioentry_id));"
+            "CREATE TABLE filenames (taxon_id INTEGER, filename TEXT);"
         )
         self.server.adaptor.execute(sql)
         self.load_data_into_table("filenames", data)
 
     def load_checkm_results(self, data):
         sql = (
-            "CREATE TABLE checkm (bioentry_id INTEGER, completeness FLOAT, "
-            " contamination FLOAT, FOREIGN KEY(bioentry_id) REFERENCES bioentry(bioentry_id));"
+            "CREATE TABLE checkm (taxon_id INTEGER, completeness FLOAT, "
+            " contamination FLOAT);"
         )
         self.server.adaptor.execute(sql)
         self.load_data_into_table("checkm", data)
@@ -1577,19 +1578,13 @@ class DB:
         return df
 
 
-    def get_filenames_to_bioentry(self, as_taxid=False):
-        if as_taxid:
-            select = "entry.taxon_id"
-        else:
-            select = "file.bioentry_id"
-
+    def get_filenames_to_taxon_id(self):
         sql = (
-            f"SELECT filename, {select} FROM filenames AS file "
-            "INNER JOIN bioentry AS entry ON file.bioentry_id=entry.bioentry_id; "
+            f"SELECT filename, taxon_id FROM filenames;"
         )
         hsh_filenames_to_entry = {}
         results = self.server.adaptor.execute_and_fetchall(sql)
-        return {filename.replace(".gbk", ""): entry_id for filename, entry_id in results}
+        return {filename: entry_id for filename, entry_id in results}
 
 
     def load_chlamdb_config_tables(self, entries):
@@ -1599,6 +1594,14 @@ class DB:
         )
         self.server.adaptor.execute(sql)
         self.load_data_into_table("biodb_config", entries)
+
+
+    def update_taxon_ids(self, update_lst):
+        query = (
+            "UPDATE bioentry SET taxon_id=? WHERE bioentry_id=?;"
+        )
+        for bioentry_id, taxon_id in update_lst:
+            self.server.adaptor.execute(query, (taxon_id, bioentry_id))
 
 
     def update_plasmid_status(self, plasmid_bioentries):
@@ -1611,6 +1614,7 @@ class DB:
         data = [(bioentry_id, plasmid_term_id, is_plasmid)
                 for bioentry_id, is_plasmid in plasmid_bioentries]
         self.server.adaptor.executemany(sql, data)
+
 
     # wrapper methods
     def commit(self):
