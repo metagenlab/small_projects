@@ -28,7 +28,7 @@ def id_generator(size=6, chars=string.ascii_uppercase + string.digits):
 
 
 def make_run_dir(execution_folder, 
-                 analysis_id):
+                 analysis_id=False):
     import shutil
     import errno
     
