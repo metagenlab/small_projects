@@ -619,17 +619,56 @@ class DB:
         return hsh_results
 
 
-    def get_ko_hits(self, ids):
+    # NOTE:
+    # All those get_*_hits could be improved in several ways:
+    #  - probably code refactoring: since the code is quite similar
+    #    it may be possible to factor out the redundant code
+    #  - when querying for seqids, two many joins are being performed
+    #    it may be worth it to simplify this
+    def get_ko_hits(self, ids, indexing="bioentry", search_on="bioentry"):
         prot_query = ",".join("?" for i in ids)
+
+        if search_on=="bioentry":
+            search_term = "entry.bioentry_id"
+        elif search_on=="seqid":
+            search_term = "seqid.seqfeature_id"
+        elif search_on=="taxon_id":
+            search_term = "entry.taxon_id"
+        else:
+            raise RuntimeError(f"Searching on {search_on} not supported")
+
+        if indexing=="seqid":
+            index = "seqid.seqfeature_id"
+        elif indexing=="bioentry":
+            index = "entry.bioentry_id"
+        elif indexing=="taxon_id":
+            index = "entry.taxon_id"
+        else:
+            raise RuntimeError(f"Index {indexing} not supported")
+
         query = (
-            "SELECT hsh.seqid, hit.ko_id "
-            "FROM sequence_hash_dictionnary AS hsh "
+            f"SELECT {index}, hit.ko_id, COUNT(*) "
+            "FROM bioentry AS entry "
+            "INNER JOIN seqfeature AS seqid ON seqid.bioentry_id=entry.bioentry_id "
+            "INNER JOIN sequence_hash_dictionnary AS hsh ON hsh.seqid = seqid.seqfeature_id "
             "INNER JOIN ko_hits AS hit ON hit.hsh=hsh.hsh "
-            f"WHERE hsh.seqid IN ({prot_query});"
+            f"WHERE {search_term} IN ({prot_query}) "
+            f"GROUP BY {index}, hit.ko_id;"
         )
         results = self.server.adaptor.execute_and_fetchall(query, ids)
-        df = DB.to_pandas_frame(results, ["seqid", "KO"])
-        return df.set_index(["seqid"])
+        df = DB.to_pandas_frame(results, [indexing, "ko", "count"])
+        column_names = [indexing, "ko", "count"]
+        df = DB.to_pandas_frame(results, column_names)
+        if df.empty:
+            return df
+
+        if indexing=="taxon_id" or indexing=="bioentry":
+            df = df.set_index([indexing, "ko"]).unstack(level=0, fill_value=0)
+            df.columns = [col for col in df["count"].column.values]
+        elif indexing=="seqid":
+            df = df[[indexing, "ko"]]
+            df = df.set_index([indexing])
+        return df
 
 
     def get_ko_count(self, bioentries, keep_seqids=False):
@@ -815,7 +854,8 @@ class DB:
     def get_config_table(self):
         sql = "SELECT * from biodb_config;"
         values = self.server.adaptor.execute_and_fetchall(sql)
-        return {val[0]: val[1] for val in values}
+        return {val[0]: val[2] for val in values}
+
 
     def create_biosql_database(self, args):
         self.server.new_database(self.db_name)
