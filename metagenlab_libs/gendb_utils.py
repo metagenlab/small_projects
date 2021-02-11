@@ -1,5 +1,6 @@
 import pandas
 from django.conf import settings
+from django.db import IntegrityError
 
 # setup django do be able to access django db models 
 import GEN_database.settings as GEN_settings
@@ -19,7 +20,7 @@ class DB:
         import sqlite3
         
         self.db_path = db_path
-        print("connecting to ", self.db_path)
+        #print("connecting to ", self.db_path)
         self.conn = sqlite3.connect(self.db_path)
         self.cursor = self.conn.cursor()
         
@@ -39,18 +40,17 @@ class DB:
                   where t2.name="{metric_name}"
                   '''
 
-        print(sql)
+        #print(sql)
         if index_str:
             return {str(i[0]):i[1] for i in self.cursor.execute(sql,).fetchall()}
         else:
             return {int(i[0]):i[1] for i in self.cursor.execute(sql,).fetchall()}
 
     def get_sample_metadata(self, metric_name, index_str=True):
-        sql = f'''select t1.id,value from GEN_sample t1
-                  inner join GEN_samplemetadata t2 on t1.id=t2.sample_id
-                  inner join GEN_term t3 on t2.term_id=t3.id
-                  where t3.name="{metric_name}";'''
-                  
+        sql = f'''select t1.sample_id,t1.value from GEN_samplemetadata t1
+                  inner join GEN_term t2 on t1.term_id=t2.id
+                  where t2.name="{metric_name}";'''
+        print(sql)      
         if index_str:
             return {str(i[0]):i[1] for i in self.cursor.execute(sql,).fetchall()}
         else:
@@ -85,6 +85,21 @@ class DB:
 
         return {i[0]:i[1] for i in self.cursor.execute(sql,).fetchall()}
 
+    def get_molis_id2sample_id_list(self,):
+
+        sql = ''' 
+        select molis_id, id from GEN_sample
+        '''
+
+        molis_id2sample_list = {}
+        for row in self.cursor.execute(sql,).fetchall():
+            if row[0] not in molis_id2sample_list:
+                molis_id2sample_list[row[0]] = [row[1]]
+            else:
+                molis_id2sample_list[row[0]].append(row[1])
+
+        return molis_id2sample_list
+
 
     def get_sample_df(self,):
 
@@ -106,6 +121,7 @@ class DB:
 
         res_filter = ''
         if term_list:
+            print("term_list", term_list)
             term_filter = '","'.join(term_list)
             res_filter += f'and t2.name in ("{term_filter}")\n' 
         if fastq_filter:
@@ -209,6 +225,63 @@ class DB:
 
         return {int(i[0]):i[1] for i in self.cursor.execute(sql,).fetchall()}
 
+    def parse_CT_scoring_table(self, table_path):
+        
+        df = pandas.read_csv(table_path, 
+                               index_col=None,
+                               header=0,
+                               sep="\t")
+        df = df.fillna(value=False)
+        term_name2data = {}
+        for n, row in df.iterrows():
+            term_name2data[row["name"]] = {"LCL_failed": row["LCL_failed"], "UCL_failed":row["UCL_failed"], "LCL_warning":row["LCL"], "UCL_warning":row["UCL"]}
+
+        return term_name2data
+
+    def qc_score(self, fastq_id_list, config):
+        
+        metric2scoring = self.parse_CT_scoring_table(config["SCORING"])
+        print("metric2scoring", metric2scoring)
+
+        print(fastq_id_list)
+        df = self.get_fastq_metadata_list(term_list=list(metric2scoring.keys()), fastq_filter=fastq_id_list)
+        # fastq_id, t2.name,t1.value, run_name
+        print("ok")
+        # default score to 0
+        fastq_id2n_fail = {i:0 for i in df["fastq_id"].to_list()}
+        fastq_id2n_warn = {i:0 for i in df["fastq_id"].to_list()}
+        fastq_id2metric2score = {i:{} for i in df["fastq_id"].to_list()}
+                
+        for n, row in df.iterrows(): 
+            print(n)
+            fastq_id = row["fastq_id"]
+
+            if row["name"] in metric2scoring:
+                # default green
+                
+                LCL_failed = metric2scoring[row["name"]]["LCL_failed"]
+                UCL_failed = metric2scoring[row["name"]]["UCL_failed"]
+                LCL_warning = metric2scoring[row["name"]]["LCL_warning"]
+                UCL_warning = metric2scoring[row["name"]]["UCL_warning"]
+                if LCL_failed:
+                    if float(float(row["value"])) < float(LCL_failed):
+                        fastq_id2n_fail[fastq_id] += 1
+                        fastq_id2metric2score[fastq_id][row["name"]] = 'FAIL'
+                if UCL_failed:
+                    if float(float(row["value"])) > float(UCL_failed):
+                        fastq_id2n_fail[fastq_id] += 1
+                        fastq_id2metric2score[fastq_id][row["name"]] = 'FAIL'
+                if row["name"] not in fastq_id2metric2score[fastq_id]:
+                    if LCL_warning:
+                        if float(float(row["value"])) < float(LCL_warning):
+                            fastq_id2n_warn[fastq_id] += 1
+                            fastq_id2metric2score[fastq_id][row["name"]] = 'WARN'
+                    if UCL_warning:
+                        if float(float(row["value"])) > float(UCL_warning):
+                            fastq_id2n_warn[fastq_id] += 1
+                            fastq_id2metric2score[fastq_id][row["name"]] = 'WARN' 
+
+        return fastq_id2n_fail, fastq_id2n_warn, fastq_id2metric2score
 
     def get_run_name2run_id(self,):
         sql = 'select run_name,id from GEN_runs'
@@ -396,6 +469,7 @@ class DB:
                            term_name,
                            value):
         '''
+        TODO: add option to update on conflict
         [{"sample_id": sample_id,
         "term_name": <name>,
         "value": <value>,
@@ -427,11 +501,16 @@ class DB:
             term_id2term_name[term_id] = term.name
         return term_id2term_name
 
-    def fastq_mutation(self, aa_change):
+    def fastq_mutation(self, aa_change_list):
         
-        sql = f'select fastq_id from GEN_snps where aa_change="{aa_change}";'
+        change_filter = '","'.join(aa_change_list)
+        sql = f'select fastq_id,aa_change from GEN_snps where aa_change in ("{change_filter}");'
+        df = pandas.read_sql(sql, self.conn)
+        fastq2changes = {i:[] for i in df["fastq_id"].to_list()}
+        for n, row in df.iterrows():
+            fastq2changes[row["fastq_id"]].append(row["aa_change"])
 
-        return [i[0] for i in self.cursor.execute(sql,)]
+        return fastq2changes
 
 
     def add_QC_report(self, run_name, run_path):
@@ -555,6 +634,92 @@ class DB:
         return [i[0] for i in self.cursor.execute(sql,).fetchall()]
         
 
+    def calculate_age(self, birth_date, prel_date):
+        from dateutil.relativedelta import relativedelta
+        rdelta = relativedelta(prel_date, birth_date)
+        age_years = rdelta.years 
+        if age_years == 0:
+            age_months = rdelta.months
+            if age_months == 0:
+                age_weeks = rdelta.weeks
+                return f'{age_weeks} weeks'
+            else:
+                return f'{age_months} months'
+        else:
+            return age_years
+
+
+    def insert_molis_sample_metadata_from_xml(self, 
+                                              df, 
+                                              field_definition, 
+                                              molis_alias="Numéro alias", 
+                                              already_into_db="patient_sex"):
+        import datetime
+        samples_in_db = set([str(i) for i in self.get_sample_metadata(already_into_db).keys()])
+        
+        metadata_list = []
+
+        molis2sample_list = self.get_molis_id2sample_id_list()
+
+        for n, row in df.iterrows():
+            alias = row[molis_alias]
+            try:
+                sample_list = molis2sample_list[int(alias)]
+            except KeyError:
+                continue
+
+            for sample_id in sample_list:
+                if str(sample_id) not in samples_in_db:               
+                    print(f"missing metadata: sample {sample_id} (alias {alias})")
+
+                    for field in field_definition:
+                        if field_definition[field]["type"] == 'simple':
+                            val = row[field_definition[field]["fields"][0]]
+                        elif field_definition[field]["type"] == 'date':
+                            val = row[field_definition[field]["fields"][0]]
+                            if val == '':
+                                continue 
+                            else:
+                                val = datetime.datetime.strptime(val, '%Y-%m-%d').strftime('%Y-%m-%d')
+                        elif field_definition[field]["type"] == 'split':
+                            index = field_definition[field]["fields"][2]
+                            delimiter = field_definition[field]["fields"][1]
+                            val = row[field_definition[field]["fields"][0]].split(delimiter)[index]
+                        elif field_definition[field]["type"] == 'concatenate':
+                            field_list = field_definition[field]["fields"]
+                            values = row[field_list].to_list()
+                            val = ''.join(values)
+                        elif field_definition[field]["type"] == 'age':
+                            date_a = datetime.datetime.strptime(row[field_definition[field]["fields"][0]], '%Y-%m-%d')
+                            date_b = datetime.datetime.strptime(row[field_definition[field]["fields"][1]], '%Y-%m-%d')
+                            val = self.calculate_age(date_a, date_b).strftime('%Y-%m-%d')
+                        else:
+                            field_type = field_definition[field]["type"]
+                            print(f'Unknown type: {field_type}')
+                            raise IOError(f'Unknown type: {field_type}')
+                    
+                        # add value if not empty
+                        if val != '':
+                             metadata_list.append({'term_name':field, 'value': val, 'sample_id': sample_id})
+
+        # insert data
+        for metadata in metadata_list:
+            # duplicates will raise error...
+            print(metadata)
+            try:
+                self.add_sample_metadata(sample_id=metadata["sample_id"],
+                                         term_name=metadata["term_name"],
+                                         value=metadata["value"]) 
+            except IntegrityError as e:
+                if 'UNIQUE' in str(e):
+                    print(f'UNIQUE constraint failed: {sample_id} -- {metadata["term_name"]} -- {metadata["value"]}')
+                    continue
+                else:
+                    print("other error")
+                    raise
+
+
+
 def update_analysis_status(analysis_id, status):
     from GEN.models import Analysis
     m = Analysis.objects.filter(id=analysis_id)[0]
@@ -629,3 +794,4 @@ def create_analysis(fastq_id_list,
         
     
     return analysis.id
+
