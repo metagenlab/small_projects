@@ -1296,6 +1296,24 @@ class DB:
         return ret[0][0]
 
 
+    def get_seqid(self, locus_tag):
+        query = (
+            "SELECT locus_tag.seqfeature_id "
+            "FROM seqfeature_qualifier_value AS locus_tag "
+            "INNER JOIN seqfeature AS cds "
+            " ON cds.seqfeature_id=locus_tag.seqfeature_id "
+            "INNER JOIN term AS cds_term ON cds_term.term_id=cds.type_term_id "
+            " AND cds_term.name=\"CDS\""
+            "WHERE locus_tag.value = ?;"
+        )
+
+        values =  self.server.adaptor.execute_and_fetchall(query, [locus_tag,])
+        if len(values)==0:
+            raise RuntimeError("No such entry")
+        return values[0][0]
+
+
+
     def get_seqid_in_neighborhood(self, bioentry_id, start_loc, stop_loc):
         query = (
             "SELECT seqfeature_id "
@@ -1429,6 +1447,27 @@ class DB:
         )
         results = self.server.adaptor.execute_and_fetchall(query, bioentries)
         return DB.to_pandas_frame(results, ["bioentry", "taxon", "ref_genome_bioentry"])
+
+
+    def get_og_identity(self, og, ref_seqid):
+        """
+        For now need to have both an og and a ref_seqid.
+        """
+
+        query = (
+            "SELECT id_1, id_2, identity "
+            "FROM orthology_identity "
+            "WHERE orthogroup = ? AND (id_1 = ? OR id_2 = ?);"
+        )
+        results = self.server.adaptor.execute_and_fetchall(query, (og, ref_seqid, ref_seqid))
+        filtered_values = []
+        for id_1, id_2, identity in results:
+            if id_1==ref_seqid:
+                filtered_values.append((id_2, identity))
+            else:
+                filtered_values.append((id_1, identity))
+        df = DB.to_pandas_frame(filtered_values, ["seqid", "identity"])
+        return df.set_index(["seqid"])
 
 
     # For each genome, return the number of gene that were assigned
