@@ -56,6 +56,18 @@ class DB:
         )
         return self.server.adaptor.execute_and_fetchall(sql,)[0][0]
 
+    def get_taxid_from_seqid(self, seqids):
+        query = ",".join("?" for _ in seqids)
+        sql = (
+            "SELECT fet.seqfeature_id, entry.taxon_id "
+            "FROM seqfeature AS fet "
+            "INNER JOIN bioentry AS entry ON entry.bioentry_id=fet.bioentry_id "
+            f"WHERE fet.seqfeature_id IN ({query});"
+        )
+        results = self.server.adaptor.execute_and_fetchall(sql, seqids)
+        return {seqid: taxon_id for seqid, taxon_id in results}
+
+
     def create_seq_hash_to_seqid(self, to_load):
         sql = (
             f"CREATE TABLE sequence_hash_dictionnary (hsh INTEGER, seqid INTEGER," 
@@ -1512,6 +1524,20 @@ class DB:
             df = df[[indexing, "orthogroup"]]
             df = df.set_index([indexing])
         return df
+
+
+    def get_translation(self, seqid):
+        query = (
+            "SELECT translation.value  "
+            "FROM seqfeature_qualifier_value AS translation "
+            "INNER JOIN term AS transl_term ON transl_term.term_id=translation.term_id "
+            " AND transl_term.name=\"translation\" "
+            f"WHERE translation.seqfeature_id = ?;"
+        )
+        results = self.server.adaptor.execute_and_fetchall(query, [seqid])
+        if results==None or len(results)==0:
+            raise RuntimeError("No translation")
+        return results[0][0]
 
 
     def get_genes_from_og(self, orthogroups, bioentries=None, terms=["gene", "product"]):
