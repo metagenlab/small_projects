@@ -68,7 +68,8 @@ class Molis():
             print('PREL is NOT in [None "None"]', data["DATE_PREL"], type(data["DATE_PREL"]))
             data["DATE_PREL"] = datetime.datetime.strptime(data["DATE_PREL"], '%Y-%m-%d %H:%M:%S').strftime('%Y-%m-%d')
         else:
-            print("PREL is NONE--------")
+            print("PREL is NONE, removing from dict")
+            del data["DATE_PREL"]
 
         return data
 
