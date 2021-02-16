@@ -114,7 +114,8 @@ class DB:
                                 term_list=False, 
                                 fastq_filter=None, 
                                 run_name_list=False,
-                                metadata_value_list=False,):
+                                metadata_value_list=False,
+                                add_molis=False):
         '''
         retrieve metadata from both sample and fastq metadata table
         '''
@@ -153,12 +154,21 @@ class DB:
             {res_filter}
             group by t3.fastq_id, t2.name,t4.fastq_prefix,t5.run_date,t5.run_name,t5.read_length
             '''
-        print(sql)
+        #print(sql)
         # AND t4.run_name like "%_CleanPlex"
         # 
         df = pandas.read_sql(sql, self.conn)
 
-
+        if add_molis:
+            print("adding molis")
+            df_molis = self.get_fastq_and_sample_data(df["fastq_id"].to_list()).set_index("fastq_id")
+            print(df_molis.head())
+            df = df.set_index("fastq_id").join(df_molis, on="fastq_id", rsuffix='_other')
+            print("------------------")
+            print(df.head())
+            print("----------------------")
+            df = df[["molis_id", "name", "value", "run_name"]]
+            print(df.head())
         return df
 
     def get_xslx_id2fastq_id(self,):
@@ -241,24 +251,19 @@ class DB:
     def qc_score(self, fastq_id_list, config):
         
         metric2scoring = self.parse_CT_scoring_table(config["SCORING"])
-        print("metric2scoring", metric2scoring)
 
-        print(fastq_id_list)
         df = self.get_fastq_metadata_list(term_list=list(metric2scoring.keys()), fastq_filter=fastq_id_list)
         # fastq_id, t2.name,t1.value, run_name
-        print("ok")
         # default score to 0
         fastq_id2n_fail = {i:0 for i in df["fastq_id"].to_list()}
         fastq_id2n_warn = {i:0 for i in df["fastq_id"].to_list()}
         fastq_id2metric2score = {i:{} for i in df["fastq_id"].to_list()}
                 
         for n, row in df.iterrows(): 
-            print(n)
             fastq_id = row["fastq_id"]
 
             if row["name"] in metric2scoring:
                 # default green
-                
                 LCL_failed = metric2scoring[row["name"]]["LCL_failed"]
                 UCL_failed = metric2scoring[row["name"]]["UCL_failed"]
                 LCL_warning = metric2scoring[row["name"]]["LCL_warning"]
@@ -347,6 +352,55 @@ class DB:
                                   filearc_folder])
         self.conn.commit()
 
+    def compare_samples(self, fastq_id_1, fastq_id2,print_data=False):
+        
+        sql = f'select * from GEN_snps where fastq_id={fastq_id_1}'
+        df1 = pandas.read_sql(sql, self.conn)
+        sql2 = f'select * from GEN_snps where fastq_id={fastq_id2}'
+        df2 = pandas.read_sql(sql2, self.conn)
+        df1["VAR"] = df1["ref"] + df1["position"].astype(str) + df1["alt"]
+        df2["VAR"] = df2["ref"] + df2["position"].astype(str) + df2["alt"]
+
+        df1_vars = set(df1["VAR"].to_list())
+        df2_vars = set(df2["VAR"].to_list())
+        
+        shared = df1_vars.intersection(df2_vars)
+        unique_df1 = df1_vars.difference(df2_vars)
+        unique_df2= df2_vars.difference(df1_vars)
+        union = df1_vars.union(df2_vars)
+        if print_data:
+            print("unique_1", df1_vars)
+            print("unique_2", df2_vars)
+
+        n_shared = len(shared)
+        n_unique_df1 = len(unique_df1)
+        n_unique_df2 = len(unique_df2)
+        n_union = len(union)
+        n_diffs = n_unique_df1 +  n_unique_df2
+        return [fastq_id_1, fastq_id2, n_union, n_shared, n_diffs, n_unique_df1, n_unique_df2]
+
+    def parwise_snps_comp(self, fastq_list):
+        import itertools
+        comb = itertools.combinations(fastq_list, 2)
+        res = []
+        complete_mat = []
+        for one_pair in comb:
+            vals = self.compare_samples(one_pair[0], one_pair[1],print_data=False)
+            res.append(vals)
+            complete_mat.append(vals)
+            # reverse comp
+            vals = [vals[1], vals[0]] + vals[2:]
+            complete_mat.append(vals)
+            
+        df = pandas.DataFrame(res)
+        df.columns = ["fastq1", "fastq2", "n_union", "n_shared", "n_diffs", "n_unique_1", "n_unique_2"]
+        df2 = pandas.DataFrame(complete_mat)
+        df2.columns = ["fastq1", "fastq2", "n_union", "n_shared", "n_diffs", "n_unique_1", "n_unique_2"]
+        m = pandas.pivot(df2, index="fastq1", columns="fastq2", values="n_diffs").fillna(0)
+
+        return df, m
+
+
     def insert_sample(self,
                       col_names,
                       values_list,
@@ -365,21 +419,31 @@ class DB:
                                                                                       ','.join(['?']*len(col_names)),
                                                                                       update_str_comb)
         
-        print(sql_template)
-        print(values_list)
+        #print(sql_template)
+        #print(values_list)
         self.cursor.execute(sql_template, values_list + values_list)
         self.conn.commit()
 
         return self.get_sample_id(sample_xls_id)
   
 
-    def match_sample_to_fastq(self, sample_prefix):
-        sql = 'select id from GEN_fastqfiles where fastq_prefix=?' 
+    def get_mapped_fastq_list(self,):
+
+        sql = 'select distinct fastq_id from GEN_fastqtosample'
+        
+        return set([str(i[0]) for i in self.cursor.execute(sql,)])
+
+    def match_sample_to_fastq(self, sample_prefix, filter_already_mapped=False):
+        sql = 'select id from GEN_fastqfiles where fastq_prefix=?'
+        
         try:
             fastq_id_list = [i[0] for i in self.cursor.execute(sql,(sample_prefix,)).fetchall()]
         except:
-            fastq_id = [] 
-        return fastq_id_list
+            return [] 
+        if filter_already_mapped:
+            return [str(i) for i in fastq_id_list if i not in filter_already_mapped]
+        else:
+            return fastq_id_list
 
 
     def get_fastq(self, run_name=False):
@@ -655,7 +719,7 @@ class DB:
                                               molis_alias="Numéro alias", 
                                               already_into_db="patient_sex"):
         import datetime
-        samples_in_db = set([str(i) for i in self.get_sample_metadata(already_into_db).keys()])
+        samples_in_db = [] # set([str(i) for i in self.get_sample_metadata(already_into_db).keys()])
         
         metadata_list = []
 
