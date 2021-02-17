@@ -38,7 +38,7 @@ class DB:
             from sqlalchemy import create_engine
             
             engine = create_engine(f"mysql://root:{sqlpsw}@127.0.0.1/GEN_LIMS")
-            self.conn = engine.connect()
+            self.conn = engine.raw_connection()
             self.cursor = self.conn.cursor()
 
             # placeholder for sql querries (differ between sqlite and mysql)
