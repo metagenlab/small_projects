@@ -446,7 +446,7 @@ class DB:
         sql = 'select distinct fastq_id from GEN_fastqtosample'
         
         df = pandas.read_sql(sql, self.conn)
-        if df_empty.empty:
+        if df.empty:
             return []
         else:
             fastq_id_list = df["fastq_id"].to_list()
