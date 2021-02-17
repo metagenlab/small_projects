@@ -16,14 +16,27 @@ except:
     pass
 
 class DB:
-    def __init__(self, db_path):
-        import sqlite3
+    def __init__(self,):
         
-        self.db_path = db_path
-        #print("connecting to ", self.db_path)
-        self.conn = sqlite3.connect(self.db_path)
-        self.cursor = self.conn.cursor()
         
+        db_type = settings.DB_DRIVER
+
+        if db_type != "sqlite":
+            import MySQLdb
+            sqlpsw = os.environ['SQLPSW']
+            self.conn = MySQLdb.connect(passwd=sqlpsw,
+                                        user="root",
+                                        host="127.0.0.1",
+                                        db="GEN_LIMS")
+            self.cursor = self.conn.cursor()
+
+        else:
+            import sqlite3
+            self.db_path = settings.SQLITE_DB
+            self.conn = sqlite3.connect(self.db_path)
+            self.cursor = self.conn.cursor()
+
+
     def get_fastq_metadata(self, metric_name, index_str=True, analysis_id=False):
         
         if analysis_id:
