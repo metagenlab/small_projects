@@ -68,7 +68,7 @@ class EteTree:
             for col_no, column in enumerate(self.columns):
                 # Note: this assumes that only bioentries (integer)
                 # are used as leaf names
-                leaf.add_face(column.get_face(int(leaf.name)), col_no, "aligned")
+                leaf.add_face(column.get_face(leaf.name), col_no, "aligned")
 
         tree_style = self.get_style()
         for col_no, column in enumerate(self.columns):
@@ -108,12 +108,17 @@ class SimpleColorColumn(Column):
         self.values = values
         self.header = header
 
-    def fromSeries(series, header=None):
+    def fromSeries(series, header=None, cls=None):
         values = series.to_dict()
+        print(values)
         col_header = header if header!=None else series.name
-        return SimpleColorColumn(values, header=col_header)
+        if cls is None:
+            return SimpleColorColumn(values, header=col_header)
+        else:
+            return cls(values, header=col_header)
 
     def get_face(self, index):
+        index = int(index)
         val = self.values.get(index, 0)
         text_face = TextFace(val)
 
@@ -122,6 +127,7 @@ class SimpleColorColumn(Column):
             text_face.inner_background.color = EteTree.BLUE
         self.set_default_params(text_face)
         return text_face
+
 
 class ModuleCompletenessColumn(Column):
     """
@@ -136,6 +142,7 @@ class ModuleCompletenessColumn(Column):
         self.header = header
 
     def get_face(self, index):
+        index = int(index)
         val = self.values.get(index, 0)
         text_face = TextFace(val)
 
@@ -166,6 +173,7 @@ class KOAndCompleteness(Column):
         self.header = module
 
     def get_face(self, index):
+        index = int(index)
         val = self.values.get(index, "-")
         if val==0:
             val = "-"

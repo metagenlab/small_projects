@@ -31,6 +31,8 @@ class DB:
         self.db_name = db_name
         self.conn_ncbi_taxonomy = None
         self.conn_refseq = None
+        # this will need to be changed in case a MySQL database is used
+        self.placeholder = "?"
 
     def create_indices_on_cds(self):
         sql_index1 = 'create index ftgcga on feature_tables_genomes_cds(genome_accession)'    
@@ -750,6 +752,16 @@ class DB:
         return hsh_results
 
 
+    def get_og_phylogeny(self, og):
+        query = (
+            "SELECT tree FROM gene_phylogeny WHERE orthogroup_id=?;"
+        )
+        results = self.server.adaptor.execute_and_fetchall(query, [og])
+        if len(results)!=1:
+            raise RuntimeError(f"Could not find phylogeny for orthogroup {og}")
+        return results[0][0]
+
+
     def get_locus_to_og(self):
         query = (
             f"SELECT locus.value, og.value"
@@ -909,6 +921,23 @@ class DB:
         for line in n_tRNA_results:
             results[line[0]] = int(line[1])
         return results
+
+    
+    def get_locus_to_genomes(self, locus_lst):
+        # quick and dirty, may need to regroup it with another function
+        values = ",".join("?" for _ in locus_lst)
+        query = (
+            "SELECT locus_tag.value, entry.description "
+            "FROM seqfeature_qualifier_value AS locus_tag "
+            "INNER JOIN term AS locus_term ON locus_term.term_id=locus_tag.term_id "
+            " AND locus_term.name=\"locus_tag\" "
+            "INNER JOIN seqfeature AS feature ON feature.seqfeature_id=locus_tag.seqfeature_id "
+            "INNER JOIN bioentry AS entry ON feature.bioentry_id=entry.bioentry_id "
+            f"WHERE locus_tag.value IN ({values});"
+        )
+        results = self.server.adaptor.execute_and_fetchall(query, locus_lst)
+        return {locus: description for locus, description in results}
+
     
     def get_genomes_sequences(self):
         query = (
@@ -919,6 +948,7 @@ class DB:
         for str_id, seq in results:
             hsh_results[int(str_id)] = seq
         return hsh_results
+
 
     def get_term_id(self, term, create_if_absent=False, ontology="Annotation Tags"):
         query = f"SELECT term_id FROM term WHERE name=\"{term}\";"
@@ -939,6 +969,7 @@ class DB:
             gc_term_id = result[0][0]
         return gc_term_id
 
+
     def get_genomes_description(self, entries=None, exclude_plasmids=False,
             indexing="bioentry", indexing_type="str"):
         """
@@ -949,6 +980,7 @@ class DB:
         * indexing: index the description either on bioentry or on taxon ids
         * indexing_type: the index can either be a str (useful to interact with etree) or as integers
         """
+
         if indexing_type != "int" and indexing_type != "str":
             raise RuntimeError(f"{indexing_type} not supported, must be int or str")
 
@@ -1444,8 +1476,9 @@ class DB:
     #
     # NOTE: may be interesting to use int8/16 whenever possible 
     # to spare memory.
-    def to_pandas_frame(db_results, columns):
+    def to_pandas_frame(db_results, columns, types=None):
         return pd.DataFrame(db_results, columns=columns, dtype=int)
+
 
     def get_bioentries_in_taxon(self, bioentries=None):
         # NOTE: need to write the code for the base where bioentries is None
@@ -1545,7 +1578,7 @@ class DB:
             if term not in ["length", "gene", "product", "locus_tag"]:
                 raise RuntimeError(f"Term not supported: {term}")
 
-        og_entries = ",".join("?" for og in orthogroups)
+        og_entries = self.gen_placeholder_string(orthogroups) # ",".join("?" for og in orthogroups)
         query_args = orthogroups
 
         db_terms = [t for t in terms if t!="length"]
@@ -1720,13 +1753,19 @@ class DB:
                 for bioentry_id, is_plasmid in plasmid_bioentries]
         self.server.adaptor.executemany(sql, data)
 
+    
+    def gen_placeholder_string(self, args):
+        return ",".join(self.placeholder for _ in args)
+
 
     # wrapper methods
     def commit(self):
         self.server.commit()
 
+
     def load_gbk_wrapper(self, records):
         self.server[self.db_name].load(records)
+
 
     # Maybe return different instance of a subclass depending on the type
     # of database? Would allow to avoid code duplication if several database
@@ -1755,3 +1794,4 @@ class DB:
     def load_db_from_name(db_name, db_type = "sqlite"):
         params = {"chlamdb.db_type" : db_type, "chlamdb.db_name" : db_name}
         return DB.load_db(db_name, params)
+
