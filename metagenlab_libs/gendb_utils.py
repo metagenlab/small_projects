@@ -16,6 +16,7 @@ except:
     print("django setup failed-- already done?")
     pass
 
+
 class DB:
     def __init__(self,):
         
@@ -58,29 +59,29 @@ class DB:
                   where t2.name="{metric_name}"
                   '''
 
-        #print(sql)
+        self.cursor.execute(sql,)
         if index_str:
-            return {str(i[0]):i[1] for i in self.cursor.execute(sql,).fetchall()}
+            return {str(i[0]):i[1] for i in self.cursor.fetchall()}
         else:
-            return {int(i[0]):i[1] for i in self.cursor.execute(sql,).fetchall()}
+            return {int(i[0]):i[1] for i in self.cursor.fetchall()}
 
     def get_sample_metadata(self, metric_name, index_str=True):
         sql = f'''select t1.sample_id,t1.value from GEN_samplemetadata t1
                   inner join GEN_term t2 on t1.term_id=t2.id
                   where t2.name="{metric_name}";'''
-        print(sql)      
+        self.cursor.execute(sql,)   
         if index_str:
-            return {str(i[0]):i[1] for i in self.cursor.execute(sql,).fetchall()}
+            return {str(i[0]):i[1] for i in self.cursor.fetchall()}
         else:
-            return {int(i[0]):i[1] for i in self.cursor.execute(sql,).fetchall()}
+            return {int(i[0]):i[1] for i in self.cursor.fetchall()}
 
     def get_fastq_id2run_name(self,):
 
         sql = '''select t1.id,run_name from GEN_fastqfiles t1
                  inner join GEN_runs t2 on t1.run_id=t2.id
         '''
-
-        return {str(i[0]):i[1] for i in self.cursor.execute(sql,).fetchall()}
+        self.cursor.execute(sql,)
+        return {str(i[0]):i[1] for i in self.cursor.fetchall()}
 
     def get_metadata_labels(self,):
 
@@ -90,8 +91,8 @@ class DB:
                  select distinct t2.id,t2.name from GEN_samplemetadata t1
                  inner join GEN_term t2 on t1.term_id=t2.id
         '''
-        
-        return {str(i[0]):i[1] for i in self.cursor.execute(sql,).fetchall()}
+        self.cursor.execute(sql,) 
+        return {str(i[0]):i[1] for i in self.cursor.fetchall()}
 
 
     def get_molis_id2fastq_id(self,):
@@ -100,8 +101,8 @@ class DB:
         select fastq_id, molis_id from GEN_fastqtosample t1
         inner join GEN_sample t2 on t1.sample_id=t2.id
         '''
-
-        return {i[0]:i[1] for i in self.cursor.execute(sql,).fetchall()}
+        self.cursor.execute(sql,) 
+        return {i[0]:i[1] for i in self.cursor.fetchall()}
 
     def get_molis_id2sample_id_list(self,):
 
@@ -110,7 +111,8 @@ class DB:
         '''
 
         molis_id2sample_list = {}
-        for row in self.cursor.execute(sql,).fetchall():
+        self.cursor.execute(sql,) 
+        for row in self.cursor.fetchall():
             if row[0] not in molis_id2sample_list:
                 molis_id2sample_list[row[0]] = [row[1]]
             else:
@@ -193,15 +195,15 @@ class DB:
         
         sql = '''select t2.xlsx_sample_ID,t1.fastq_id from GEN_fastqtosample t1 
                 inner join GEN_sample t2 on t1.sample_id=t2.id '''
-
-        return {int(i[0]):i[1] for i in self.cursor.execute(sql,).fetchall()}
+        self.cursor.execute(sql,) 
+        return {int(i[0]):i[1] for i in self.cursor.fetchall()}
 
 
     def get_xslx_id2sample_id(self,):
         
         sql = '''select xlsx_sample_ID,id from GEN_sample'''
-
-        return {int(i[0]):i[1] for i in self.cursor.execute(sql,).fetchall()}
+        self.cursor.execute(sql,) 
+        return {int(i[0]):i[1] for i in self.cursor.fetchall()}
 
 
     def count_qc_warning(self, key_str=False):
@@ -250,8 +252,8 @@ class DB:
         sql = f"""select t1.analysis_id,value from GEN_analysismetadata t1 
                   inner join GEN_term t2 on t1.term_id =t2.id 
                   where t2.name like '{term_name}';"""
-
-        return {int(i[0]):i[1] for i in self.cursor.execute(sql,).fetchall()}
+        self.cursor.execute(sql,) 
+        return {int(i[0]):i[1] for i in self.cursor.fetchall()}
 
     def parse_CT_scoring_table(self, table_path):
         
@@ -308,7 +310,8 @@ class DB:
 
     def get_run_name2run_id(self,):
         sql = 'select run_name,id from GEN_runs'
-        return {i[0]:i[1] for i in self.cursor.execute(sql,).fetchall()}
+        self.cursor.execute(sql,) 
+        return {i[0]:i[1] for i in self.cursor.fetchall()}
 
     def match_fastq_to_sample(self, fastq_prefix):
 
@@ -317,23 +320,26 @@ class DB:
         # use date filter to exclude mapping older than X on the various columns
         sql = f'select id from GEN_sample where xlsx_sample_ID="{fastq_prefix}"' 
         try:
-            sample_id = self.cursor.execute(sql,).fetchall()[0][0]
+            self.cursor.execute(sql,) 
+            sample_id = self.cursor.fetchall()[0][0]
         except:
             sql = f'select id from GEN_sample where sample_name="{fastq_prefix}"' 
             try:
-                sample_id = self.cursor.execute(sql,).fetchall()[0][0]
+                self.cursor.execute(sql,) 
+                sample_id = self.cursor.fetchall()[0][0]
             except:
                 sql = f'select id from GEN_sample where alias="{fastq_prefix}"' 
                 try:
-                    sample_id = self.cursor.execute(sql,).fetchall()[0][0]
+                    self.cursor.execute(sql,) 
+                    sample_id = self.cursor.fetchall()[0][0]
                 except:
                     sample_id = None 
         return sample_id
 
     def get_sample_id(self, sample_xls_id):
         sql = f'select id from GEN_sample where xlsx_sample_ID={self.spl}'
-
-        return self.cursor.execute(sql,(sample_xls_id,)).fetchall()[0][0]
+        self.cursor.execute(sql,(sample_xls_id,)) 
+        return self.cursor.fetchall()[0][0]
 
     def add_sample_to_fastq_relation(self, fastq_id, sample_id):
         
@@ -468,7 +474,8 @@ class DB:
         sql = 'select id from GEN_fastqfiles where fastq_prefix=?'
         
         try:
-            fastq_id_list = [i[0] for i in self.cursor.execute(sql,(sample_prefix,)).fetchall()]
+            self.cursor.execute(sql,(sample_prefix,)) 
+            fastq_id_list = [i[0] for i in self.cursor.fetchall()]
         except:
             return [] 
         if filter_already_mapped:
@@ -507,7 +514,8 @@ class DB:
         sql = '''select run_date,run_name,read_length,filearc_folder,qc_id,qc_path,count(*) as n_fastq from GEN_runs t1
         inner join GEN_fastqfiles t2 on t1.id=t2.run_id group by run_date,run_name,read_length,filearc_folder,qc_id,qc_path
         ''' 
-        data = [list(i) for i in self.cursor.execute(sql,).fetchall()]
+        self.cursor.execute(sql,) 
+        data = [list(i) for i in self.cursor..fetchall()]
         for n, row in enumerate(data):
             if row[4]:
                 data[n][4] = Analysis.objects.filter(id=row[4])[0]
@@ -518,7 +526,8 @@ class DB:
         sql = f'''select fastq_prefix,R1,R2 from GEN_fastqfiles t1 
                   inner join GEN_runs t2 on t1.run_id=t2.id where run_name="{run_name}"
                '''
-        return self.cursor.execute(sql,).fetchall()
+        self.cursor.execute(sql,) 
+        return self.cursor.fetchall()
 
     def get_run_table_df(self,):
         
@@ -534,7 +543,8 @@ class DB:
                 left join GEN_fastqtosample t3 on t1.id=t3.fastq_id
                 left join GEN_sample t4 on t3.sample_id=t4.id where run_name="{run_name}";
             '''
-        return {i[0]: i[1] for i in self.cursor.execute(sql,).fetchall()}
+        self.cursor.execute(sql,) 
+        return {i[0]: i[1] for i in self.cursor.fetchall()}
     
         
     def fastq_prefix2fastq_id(self,fastq_prefix_list):
@@ -723,16 +733,16 @@ class DB:
         left join GEN_subprojectsample t3 on A.id=t3.sample_id
         group by A.id 
         '''
-
-        return self.cursor.execute(sql,).fetchall()
+        self.cursor.execute(sql,) 
+        return self.cursor.fetchall()
     
     def get_analysis_fastq_list(self,analisis_id):
         
         sql = f'''
         select fastq_id from GEN_fastqset where analysis_id={analisis_id}
         '''
-        
-        return [i[0] for i in self.cursor.execute(sql,).fetchall()]
+        self.cursor.execute(sql,) 
+        return [i[0] for i in self.cursor.fetchall()]
         
 
     def calculate_age(self, birth_date, prel_date):
