@@ -433,7 +433,7 @@ class DB:
         # NOTE: xlsx_sample_ID used as reference: if a row is updated in the xlsx table, the corresponding row is updated in the sql table
         sql_template = f'INSERT into GEN_sample(%s) values(%s)' \
                        f' ON CONFLICT(GEN_sample.xlsx_sample_ID) DO UPDATE SET %s;' % (','.join(col_names),
-                                                                                      ','.join([f'%{self.spl}']*len(col_names)),
+                                                                                      ','.join([f'{self.spl}']*len(col_names)),
                                                                                       update_str_comb)
         
         print(sql_template)
