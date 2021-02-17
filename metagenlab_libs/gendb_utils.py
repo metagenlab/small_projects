@@ -19,7 +19,7 @@ class DB:
     def __init__(self,):
         
         
-        db_type = settings.DB_DRIVER
+        db_type = GEN_settings.DB_DRIVER
 
         if db_type != "sqlite":
             import MySQLdb
@@ -32,7 +32,7 @@ class DB:
 
         else:
             import sqlite3
-            self.db_path = settings.SQLITE_DB
+            self.db_path = GEN_settings.SQLITE_DB
             self.conn = sqlite3.connect(self.db_path)
             self.cursor = self.conn.cursor()
 
