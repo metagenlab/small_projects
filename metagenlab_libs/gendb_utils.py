@@ -714,7 +714,7 @@ class DB:
               where fastq_prefix in ("{sample_list_filter}");
            '''
         self.cursor.execute(sql,)
-        return {i[0]:i[1] for i in self.cursor.fetchall(sql,)}
+        return {i[0]:i[1] for i in self.cursor.fetchall(,)}
     
     def get_fastq_id2species(self, fastq_list):
         
@@ -725,7 +725,7 @@ class DB:
               where t1.id in ("{fastq_list_filter}");
            '''
         self.cursor.execute(sql,)
-        return {i[0]:i[1] for i in self.cursor.fetchall(sql,)}
+        return {i[0]:i[1] for i in self.cursor.fetchall(,)}
     
     def get_fastq_id2sample_name(self, fastq_list, key_str=True):
         
@@ -737,9 +737,9 @@ class DB:
            '''
         self.cursor.execute(sql,)
         if key_str:
-            return {str(i[0]):i[1] for i in self.cursor.fetchall(sql,)}
+            return {str(i[0]):i[1] for i in self.cursor.fetchall()}
         else:
-            return {int(i[0]):i[1] for i in self.cursor.fetchall(sql,)}
+            return {int(i[0]):i[1] for i in self.cursor.fetchall()}
 
     def get_sample_table(self,):
         
