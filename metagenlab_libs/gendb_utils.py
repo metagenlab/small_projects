@@ -360,9 +360,21 @@ class DB:
                    paired,
                    filearc_folder):
         
-        sql = f'''INSERT into GEN_runs (run_name, run_date, assay, read_length, paired, filearc_folder) values({self.spl},{self.spl},{self.spl},{self.spl},{self.spl},{self.spl}) 
+
+
+        if GEN_settings.DB_DRIVER == 'sqlite':
+            sql = f'''INSERT into GEN_runs (run_name, run_date, assay, read_length, paired, filearc_folder) values({self.spl},{self.spl},{self.spl},{self.spl},{self.spl},{self.spl}) 
             ON CONFLICT(GEN_runs.run_name) DO UPDATE SET run_date={self.spl}, assay={self.spl}, read_length={self.spl}, paired={self.spl}, filearc_folder={self.spl};
-        '''
+            '''
+        elif GEN_settings.DB_DRIVER == 'mysql':
+            sql = f'''INSERT into GEN_runs (run_name, run_date, assay, read_length, paired, filearc_folder) values({self.spl},{self.spl},{self.spl},{self.spl},{self.spl},{self.spl}) 
+            ON DUPLICATE KEY UPDATE run_date={self.spl}, assay={self.spl}, read_length={self.spl}, paired={self.spl}, filearc_folder={self.spl};
+            '''
+        else:                                                        
+            raise IOError(f"Unknown db driver: {GEN_settings.DB_DRIVER}")
+
+
+
         self.cursor.execute(sql, [run_name,
                                   run_date,
                                   assay,
