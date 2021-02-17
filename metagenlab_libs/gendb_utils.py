@@ -28,7 +28,8 @@ class DB:
             self.conn = MySQLdb.connect(passwd=sqlpsw,
                                         user="root",
                                         host="127.0.0.1",
-                                        db="GEN_LIMS")
+                                        db="GEN_LIMS",
+                                        charset='utf8')
             self.cursor = self.conn.cursor()
             # placeholder for sql querries (differ between sqlite and mysql)
             self.spl = '%s'
