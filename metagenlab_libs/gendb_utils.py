@@ -30,12 +30,15 @@ class DB:
                                         host="127.0.0.1",
                                         db="GEN_LIMS")
             self.cursor = self.conn.cursor()
-
+            # placeholder for sql querries (differ between sqlite and mysql)
+            self.spl = '%s'
         else:
             import sqlite3
             self.db_path = GEN_settings.SQLITE_DB
             self.conn = sqlite3.connect(self.db_path)
             self.cursor = self.conn.cursor()
+            # placeholder for sql querries (differ between sqlite and mysql)
+            self.spl = '?'
 
 
     def get_fastq_metadata(self, metric_name, index_str=True, analysis_id=False):
@@ -327,14 +330,14 @@ class DB:
         return sample_id
 
     def get_sample_id(self, sample_xls_id):
-        sql = 'select id from GEN_sample where xlsx_sample_ID=?'
+        sql = f'select id from GEN_sample where xlsx_sample_ID={self.spl}'
 
         return self.cursor.execute(sql,(sample_xls_id,)).fetchall()[0][0]
 
     def add_sample_to_fastq_relation(self, fastq_id, sample_id):
         
             # ignore if relation already known
-            sql2 = 'insert or ignore into GEN_fastqtosample(fastq_id, sample_id) values(?,?)'
+            sql2 = f'insert or ignore into GEN_fastqtosample(fastq_id, sample_id) values({self.spl},{self.spl})'
             
             self.cursor.execute(sql2, 
                                (fastq_id,sample_id))
@@ -350,8 +353,8 @@ class DB:
                    paired,
                    filearc_folder):
         
-        sql = '''INSERT into GEN_runs (run_name, run_date, assay, read_length, paired, filearc_folder) values(?,?,?,?,?,?) 
-            ON CONFLICT(GEN_runs.run_name) DO UPDATE SET run_date=?, assay=?, read_length=?, paired=?, filearc_folder=?;
+        sql = f'''INSERT into GEN_runs (run_name, run_date, assay, read_length, paired, filearc_folder) values({self.spl},{self.spl},{self.spl},{self.spl},{self.spl},{self.spl}) 
+            ON CONFLICT(GEN_runs.run_name) DO UPDATE SET run_date={self.spl}, assay={self.spl}, read_length={self.spl}, paired={self.spl}, filearc_folder={self.spl};
         '''
         self.cursor.execute(sql, [run_name,
                                   run_date,
@@ -420,7 +423,7 @@ class DB:
                       values_list,
                       sample_xls_id):
         
-        update_str = '%s=?'
+        update_str = f'%s=%{self.spl}'
 
         update_str_comb = ','.join([update_str % colname for colname in col_names])
         # INSERT into GEN_sample(xlsx_sample_ID,species_name,date_received,sample_name,sample_type,analysis_type,description,molis_id,myseq_passage,run_date,date_registered,date_sample_modification,user_creation_id,user_modification_id) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(GEN_sample.xlsx_sample_ID) DO UPDATE SET xlsx_sample_ID=?,species_name=?,date_received=?,sample_name=?,sample_type=?,analysis_type=?,description=?,molis_id=?,myseq_passage=?,run_date=?,date_registered=?,date_sample_modification=?,user_creation_id=?,user_modification_id=?;
@@ -428,12 +431,12 @@ class DB:
         # update all columns in case of conflict with xlsx_sample_id
         
         # NOTE: xlsx_sample_ID used as reference: if a row is updated in the xlsx table, the corresponding row is updated in the sql table
-        sql_template = 'INSERT into GEN_sample(%s) values(%s)' \
-                       ' ON CONFLICT(GEN_sample.xlsx_sample_ID) DO UPDATE SET %s;' % (','.join(col_names),
-                                                                                      ','.join(['?']*len(col_names)),
+        sql_template = f'INSERT into GEN_sample(%s) values(%s)' \
+                       f' ON CONFLICT(GEN_sample.xlsx_sample_ID) DO UPDATE SET %s;' % (','.join(col_names),
+                                                                                      ','.join(['%{self.spl}']*len(col_names)),
                                                                                       update_str_comb)
         
-        #print(sql_template)
+        print(sql_template)
         #print(values_list)
         self.cursor.execute(sql_template, values_list + values_list)
         self.conn.commit()
