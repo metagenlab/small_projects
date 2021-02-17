@@ -446,8 +446,11 @@ class DB:
         sql = 'select distinct fastq_id from GEN_fastqtosample'
         
         df = pandas.read_sql(sql, self.conn)
-        print("df", df)
-        return df["fastq_id"].to_list()
+        if df_empty.empty:
+            return []
+        else:
+            fastq_id_list = df["fastq_id"].to_list()
+            return fastq_id_list
 
     def match_sample_to_fastq(self, sample_prefix, filter_already_mapped=False):
         sql = 'select id from GEN_fastqfiles where fastq_prefix=?'
