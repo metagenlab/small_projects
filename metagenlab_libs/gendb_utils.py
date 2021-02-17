@@ -343,13 +343,19 @@ class DB:
 
     def add_sample_to_fastq_relation(self, fastq_id, sample_id):
         
+        if GEN_settings.DB_DRIVER == 'sqlite':
             # ignore if relation already known
             sql2 = f'insert or ignore into GEN_fastqtosample(fastq_id, sample_id) values({self.spl},{self.spl})'
-            
-            self.cursor.execute(sql2, 
-                               (fastq_id,sample_id))
-            
-            self.conn.commit()
+        elif GEN_settings.DB_DRIVER == 'mysql':
+            # ignore if relation already known
+            sql2 = f'insert ignore into GEN_fastqtosample(fastq_id, sample_id) values({self.spl},{self.spl})'
+        else:                                                        
+            raise IOError(f"Unknown db driver: {GEN_settings.DB_DRIVER}")
+           
+        self.cursor.execute(sql2, 
+                            (fastq_id,sample_id))
+        
+        self.conn.commit()
 
 
     def insert_run(self,
