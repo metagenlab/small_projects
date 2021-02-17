@@ -569,8 +569,8 @@ class DB:
         
         fasta_filter = '","'.join(fastq_prefix_list)
         sql = f'select fastq_prefix,id from GEN_fastqfiles where fastq_prefix in ("{fasta_filter}")'
-        
-        return {i[0]:i[1] for i in self.cursor.execute(sql,)}
+        self.cursor.execute(sql,)
+        return {i[0]:i[1] for i in self.cursor.fetchall()}
     
     def add_fastq_metadata(self, 
                            fastq_id,
@@ -713,8 +713,8 @@ class DB:
               left join GEN_sample t3 on t2.sample_id=t3.id 
               where fastq_prefix in ("{sample_list_filter}");
            '''
-        
-        return {i[0]:i[1] for i in self.cursor.execute(sql,)}
+        self.cursor.execute(sql,)
+        return {i[0]:i[1] for i in self.cursor.fetchall(sql,)}
     
     def get_fastq_id2species(self, fastq_list):
         
@@ -724,8 +724,8 @@ class DB:
               left join GEN_sample t3 on t2.sample_id=t3.id 
               where t1.id in ("{fastq_list_filter}");
            '''
-        print(sql)
-        return {i[0]:i[1] for i in self.cursor.execute(sql,)}
+        self.cursor.execute(sql,)
+        return {i[0]:i[1] for i in self.cursor.fetchall(sql,)}
     
     def get_fastq_id2sample_name(self, fastq_list, key_str=True):
         
@@ -735,11 +735,11 @@ class DB:
               left join GEN_sample t3 on t2.sample_id=t3.id 
               where t1.id in ("{fastq_list_filter}");
            '''
-        print(sql)
+        self.cursor.execute(sql,)
         if key_str:
-            return {str(i[0]):i[1] for i in self.cursor.execute(sql,)}
+            return {str(i[0]):i[1] for i in self.cursor.fetchall(sql,)}
         else:
-            return {int(i[0]):i[1] for i in self.cursor.execute(sql,)}
+            return {int(i[0]):i[1] for i in self.cursor.fetchall(sql,)}
 
     def get_sample_table(self,):
         
