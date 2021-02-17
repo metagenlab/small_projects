@@ -438,7 +438,7 @@ class DB:
                                                                                         update_str_comb)
         elif GEN_settings.DB_DRIVER == 'mysql':
             sql_template = f'INSERT into GEN_sample(%s) values(%s)' \
-                           f' ON DUPLICATE KEY UPDATE SET %s;' % (','.join(col_names),
+                           f' ON DUPLICATE KEY UPDATE %s;' % (','.join(col_names),
                                                                   ','.join([f'{self.spl}']*len(col_names)),
                                                                   update_str_comb)
         else:                                                        
