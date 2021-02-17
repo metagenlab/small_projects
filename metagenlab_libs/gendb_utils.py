@@ -515,7 +515,7 @@ class DB:
         inner join GEN_fastqfiles t2 on t1.id=t2.run_id group by run_date,run_name,read_length,filearc_folder,qc_id,qc_path
         ''' 
         self.cursor.execute(sql,) 
-        data = [list(i) for i in self.cursor..fetchall()]
+        data = [list(i) for i in self.cursor.fetchall()]
         for n, row in enumerate(data):
             if row[4]:
                 data[n][4] = Analysis.objects.filter(id=row[4])[0]
