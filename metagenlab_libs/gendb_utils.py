@@ -502,6 +502,12 @@ class DB:
                   inner join GEN_runs t2 on t1.run_id=t2.id where run_name="{run_name}"
                '''
         return self.cursor.execute(sql,).fetchall()
+
+    def get_run_table_df(self,):
+        
+        sql = f'''select * from GEN_runs 
+               '''
+        return pandas.read_sql(sql, self.conn)
     
     
     def get_run_sample2species(self, run_name):
