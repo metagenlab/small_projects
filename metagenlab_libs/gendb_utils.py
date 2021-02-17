@@ -431,10 +431,18 @@ class DB:
         # update all columns in case of conflict with xlsx_sample_id
         
         # NOTE: xlsx_sample_ID used as reference: if a row is updated in the xlsx table, the corresponding row is updated in the sql table
-        sql_template = f'INSERT into GEN_sample(%s) values(%s)' \
-                       f' ON CONFLICT(GEN_sample.xlsx_sample_ID) DO UPDATE SET %s;' % (','.join(col_names),
-                                                                                      ','.join([f'{self.spl}']*len(col_names)),
-                                                                                      update_str_comb)
+        if GEN_settings.DB_DRIVER == 'sqlite':
+            sql_template = f'INSERT into GEN_sample(%s) values(%s)' \
+                        f' ON CONFLICT(GEN_sample.xlsx_sample_ID) DO UPDATE SET %s;' % (','.join(col_names),
+                                                                                        ','.join([f'{self.spl}']*len(col_names)),
+                                                                                        update_str_comb)
+        elif GEN_settings.DB_DRIVER == 'mysql':
+            sql_template = f'INSERT into GEN_sample(%s) values(%s)' \
+                           f' ON DUPLICATE KEY UPDATE SET %s;' % (','.join(col_names),
+                                                                  ','.join([f'{self.spl}']*len(col_names)),
+                                                                  update_str_comb)
+        else:                                                        
+            raise IOError(f"Unknown db driver: {GEN_settings.DB_DRIVER}")
         
         print(sql_template)
         #print(values_list)
