@@ -1,6 +1,7 @@
 import pandas
 from django.conf import settings
 from django.db import IntegrityError
+import os 
 
 # setup django do be able to access django db models 
 import GEN_database.settings as GEN_settings
