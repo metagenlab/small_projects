@@ -24,6 +24,7 @@ class DB:
         db_type = GEN_settings.DB_DRIVER
 
         if db_type != "sqlite":
+            '''
             import MySQLdb
             sqlpsw = os.environ['SQLPSW']
             self.conn = MySQLdb.connect(passwd=sqlpsw,
@@ -32,6 +33,14 @@ class DB:
                                         db="GEN_LIMS",
                                         charset='utf8')
             self.cursor = self.conn.cursor()
+            '''
+            sqlpsw = os.environ['SQLPSW']
+            from sqlalchemy import create_engine
+            
+            engine = create_engine("mysql://root:{sqlpsw}@localhost/GEN_LIMS")
+            self.conn = engine.connect()
+            self.cursor = self.conn.cursor()
+
             # placeholder for sql querries (differ between sqlite and mysql)
             self.spl = '%s'
         else:
