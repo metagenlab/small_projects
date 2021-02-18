@@ -6,6 +6,8 @@ import os
 # setup django do be able to access django db models 
 import GEN_database.settings as GEN_settings
 
+print("DB_DRIVER", GEN_settings.DB_DRIVER)
+
 try:
     settings.configure(INSTALLED_APPS=GEN_settings.INSTALLED_APPS,
                        DATABASES=GEN_settings.DATABASES)
@@ -850,7 +852,7 @@ class DB:
                                          term_name=metadata["term_name"],
                                          value=metadata["value"]) 
             except IntegrityError as e:
-                if 'UNIQUE' in str(e):
+                if 'UNIQUE' in str(e) or 'Duplicate' in str(e):
                     print(f'UNIQUE constraint failed: {sample_id} -- {metadata["term_name"]} -- {metadata["value"]}')
                     continue
                 else:
