@@ -939,17 +939,6 @@ class DB:
         return {locus: description for locus, description in results}
 
     
-    def get_genomes_sequences(self):
-        query = (
-            "SELECT bioentry_id, seq FROM biosequence;"
-        )
-        results = self.server.adaptor.execute_and_fetchall(query)
-        hsh_results = {}
-        for str_id, seq in results:
-            hsh_results[int(str_id)] = seq
-        return hsh_results
-
-
     def get_term_id(self, term, create_if_absent=False, ontology="Annotation Tags"):
         query = f"SELECT term_id FROM term WHERE name=\"{term}\";"
         result = self.server.adaptor.execute_and_fetchall(query)
@@ -1032,96 +1021,45 @@ class DB:
             hsh_results[idx] = line[1].strip()
         return hsh_results
 
-    # Used for example in the 'home' page of Chlamdb
-    # Returns a table with a row for each genome, with the following entries
-    # - accession
-    # - GC
-    # - number of proteins
-    # - number of contigs
-    # - size
-    # - percent non-coding
-    # - description
-    def get_genomes_infos(self, filter_out_plasmids=True):
+
+    def get_genomes_infos(self):
+        """
+        Note: for efficiency sake, it would be possible to order the different
+         tables by taxon_id, walk through the table using zip in an iteator
+         and pass the iterator to pandas.
+
+         However, given the small size of the dataset, it's probably not worth
+         the implementation effort.
+        """
+
         query = (
-            "SELECT accession, COUNT(*) from seqfeature AS seq"
+            "SELECT entry.taxon_id, COUNT(*) "
+            " FROM seqfeature AS seq "
             " INNER JOIN term AS cds ON cds.term_id = seq.type_term_id AND cds.name=\"CDS\" "
             " INNER JOIN bioentry AS entry ON entry.bioentry_id = seq.bioentry_id " 
-            " GROUP BY accession ORDER BY accession;"
+            " GROUP BY entry.taxon_id;"
         )
         n_prot_results = self.server.adaptor.execute_and_fetchall(query)
 
         query = (
-            "SELECT accession, gc.value, l.value, contigs.value, cd.value, description "
+            "SELECT entry.taxon_id, COUNT(*) "
             "FROM bioentry AS entry "
-            " INNER JOIN bioentry_qualifier_value AS gc ON entry.bioentry_id = gc.bioentry_id "
-            "  INNER JOIN term as gc_term ON gc_term.term_id = gc.term_id AND gc_term.name = \"gc\" "
-            " INNER JOIN bioentry_qualifier_value AS l ON l.bioentry_id=entry.bioentry_id "
-            "  INNER JOIN term as l_term ON l_term.term_id = l.term_id AND l_term.name = \"length\" "
-            " INNER JOIN bioentry_qualifier_value AS contigs ON contigs.bioentry_id=entry.bioentry_id "
-            "  INNER JOIN term as contigs_term ON contigs_term.term_id = contigs.term_id " 
-            "     AND contigs_term.name = \"n_contigs\""
-            " INNER JOIN bioentry_qualifier_value AS cd ON cd.bioentry_id=entry.bioentry_id "
-            "  INNER JOIN term as cd_term ON cd_term.term_id = cd.term_id " 
-            "     AND cd_term.name = \"coding_density\" "
-            " GROUP BY accession ORDER BY accession;"
+            "GROUP BY entry.taxon_id;"
+        )
+        n_contigs = self.server.adaptor.execute_and_fetchall(query)
+
+        cols = ["taxon_id", "completeness", "contamination", "gc", "length", "coding_density"]
+        query = (
+            "SELECT taxon_id, completeness, contamination, gc, length, coding_density "
+            " from genome_summary;"
         )
         all_other_results = self.server.adaptor.execute_and_fetchall(query)
 
-        # Note: both queries return the values ordered by accession
-        # TODO: this should not happen, but it would be a good idea to add
-        # an assert to make sure the entries correspond
-        assembled_results = []
-        for index, value in enumerate(n_prot_results):
-            other_entry = all_other_results[index]
-            description = other_entry[5]
-            if filter_out_plasmids and "plasmid" in description:
-                continue
+        df_n_prot = DB.to_pandas_frame(n_prot_results, ["taxon_id", "n_prot"]).set_index("taxon_id")
+        df_n_contigs = DB.to_pandas_frame(n_contigs, ["taxon_id", "n_contigs"]).set_index("taxon_id")
+        df_stats = DB.to_pandas_frame(all_other_results, cols).set_index("taxon_id")
+        return df_n_prot.join(df_n_contigs).join(df_stats)
 
-            n_prot = int(value[1])
-            gc, length = round(float(other_entry[1]),2), int(other_entry[2])
-            n_contigs, non_coding_density = int(other_entry[3]), round(100.0 - float(other_entry[4]), 2)
-            entry = (value[0], gc, n_prot, n_contigs, length, non_coding_density, description)
-            assembled_results.append(entry)
-        return assembled_results
-
-    def load_genomes_gc(self, gcs):
-        term_id = self.get_term_id("gc", create_if_absent=True)
-        sql = "INSERT INTO bioentry_qualifier_value (bioentry_id, term_id, value) VALUES (?, ?, ?);";
-        for bioentry_id, gc in gcs:
-            self.server.adaptor.execute(sql , (bioentry_id, term_id, gc))
-
-    def load_genomes_lengths(self, lengths):
-        term_id = self.get_term_id("length", create_if_absent=True)
-        sql = "INSERT INTO bioentry_qualifier_value (bioentry_id, term_id, value) VALUES (?, ?, ?);";
-        for bioentry_id, length in lengths:
-            self.server.adaptor.execute(sql , (bioentry_id, term_id, length))
-
-    def load_genomes_n_contigs(self, n_contigs):
-        term_id = self.get_term_id("n_contigs", create_if_absent=True)
-        sql = "INSERT INTO bioentry_qualifier_value (bioentry_id, term_id, value) VALUES (?, ?, ?);";
-        for bioentry_id, n_contig in n_contigs:
-            self.server.adaptor.execute(sql , (bioentry_id, term_id, n_contig))
-
-    def load_genomes_coding_density(self, coding_density):
-        term_id = self.get_term_id("coding_density", create_if_absent=True)
-        sql = "INSERT INTO bioentry_qualifier_value (bioentry_id, term_id, value) VALUES (?, ?, ?);";
-        for bioentry_id, density in coding_density:
-            self.server.adaptor.execute(sql , (bioentry_id, term_id, density))
-
-    def get_coding_region_total_length(self):
-        query = (
-            "SELECT gen.bioentry_id, SUM(end_pos-start_pos) "
-            " FROM location AS loc "
-            " INNER JOIN seqfeature AS seq ON loc.seqfeature_id=seq.seqfeature_id "
-            " INNER JOIN bioentry AS gen ON gen.bioentry_id=seq.bioentry_id "
-            " INNER JOIN term AS t ON seq.type_term_id=t.term_id AND t.name=\"gene\" "
-            " GROUP BY gen.bioentry_id; "
-        )
-        results = self.server.adaptor.execute_and_fetchall(query)
-        hsh_entry_to_sum = {}
-        for str_id, str_sum in results:
-            hsh_entry_to_sum[int(str_id)] = int(str_sum)
-        return hsh_entry_to_sum
 
     def get_accession_to_entry(self):
         query = (
@@ -1186,15 +1124,17 @@ class DB:
             hsh_results[line[0].strip()] = line[1].strip()
         return hsh_results
 
+
     # Note: need to check whether this is a more correct way to proceed
     # as my Rhabdo genomes currently all have the same taxon id, the following
     # code wouldn't work
     # sql_n_genomes = 'select count(*) from (select distinct taxon_id from bioentry t1 ' \
     # ' inner join biodatabase t2 on t1.biodatabase_id=t2.biodatabase_id where t2.name="%s") A;' % biodb
     def get_n_genomes(self):
-        query = "SELECT COUNT(*) FROM bioentry;"
+        query = "SELECT COUNT(*) FROM bioentry GROUP BY taxon_id;"
         result = self.server.adaptor.execute_and_fetchall(query)
         return result[0][0]
+
 
     def load_reference_phylogeny(self, tree):
         sql = "CREATE TABLE IF NOT EXISTS reference_phylogeny (tree TEXT);"
@@ -1218,6 +1158,7 @@ class DB:
         results = self.server.adaptor.execute_and_fetchall(sql)
         return results[0][0]
 
+
     def load_filenames(self, data):
         sql = (
             "CREATE TABLE filenames (taxon_id INTEGER, filename TEXT);"
@@ -1225,26 +1166,15 @@ class DB:
         self.server.adaptor.execute(sql)
         self.load_data_into_table("filenames", data)
 
-    def load_checkm_results(self, data):
+
+    def load_genomes_info(self, data):
         sql = (
-            "CREATE TABLE checkm (taxon_id INTEGER, completeness FLOAT, "
-            " contamination FLOAT);"
+            "CREATE TABLE genome_summary (taxon_id INTEGER, completeness FLOAT, "
+            " contamination FLOAT, gc INTEGER, length INTEGER, coding_density FLOAT);"
         )
         self.server.adaptor.execute(sql)
-        self.load_data_into_table("checkm", data)
+        self.load_data_into_table("genome_summary", data)
 
-    def get_checkm_results(self):
-        query = (
-            "SELECT accession, completeness, contamination "
-            "FROM checkm as chk "
-            "INNER JOIN bioentry AS entry ON entry.bioentry_id = chk.bioentry_id;"
-        )
-        results = self.server.adaptor.execute_and_fetchall(query)
-        hsh_accession_to_checkm = {}
-        for line in results:
-            hsh_values = {"completeness": float(line[1]), "contamination": float(line[2])}
-            hsh_accession_to_checkm[line[0]] = hsh_values
-        return hsh_accession_to_checkm
 
     # Optional arguments: this function will return all cog counts 
     # grouped by bioentry and cog function, except one of the following argument is passed
@@ -1472,12 +1402,12 @@ class DB:
     # Note:
     # First extracting the data in memory and creating the dataframe
     # from it is much faster than iterating over results and adding
-    # elements separately
+    # elements separately.
     #
     # NOTE: may be interesting to use int8/16 whenever possible 
     # to spare memory.
     def to_pandas_frame(db_results, columns, types=None):
-        return pd.DataFrame(db_results, columns=columns, dtype=int)
+        return pd.DataFrame(db_results, columns=columns)
 
 
     def get_bioentries_in_taxon(self, bioentries=None):

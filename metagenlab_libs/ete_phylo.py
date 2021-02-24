@@ -53,8 +53,10 @@ class EteTree:
 
     # May be a good idea to be able to give custom parameters to the node names
     def get_leaf_name(self, index):
-        label = self.leaves_name.get(index, self.default_val)
-        return TextFace(label, fgcolor = "black", fsize = 12, fstyle = "italic")
+        label = self.leaves_name.get(int(index), self.default_val)
+        t = TextFace(label, fgcolor = "black", fsize = 7, fstyle = "italic")
+        t.margin_right=10
+        return t
 
     def rename_leaves(self, hsh_names, default_val="-"):
         self.default_val = default_val
@@ -80,8 +82,10 @@ class EteTree:
 
 
 class Column:
-    def __init__(self):
-        self.header = None
+    def __init__(self, header=None, face_params=None, header_params=None):
+        self.header = header
+        self.header_params = header_params
+        self.face_params = face_params
 
     def get_header(self):
         if self.header == None:
@@ -90,7 +94,17 @@ class Column:
         face.rotation = 270
         face.hz_align = 1
         face.vt_align = 1
+        face.fsize = 7
+
+        # Put after the default values to erase any default value
+        # in favor of a new one
+        if not self.header_params is None:
+            for param, value in self.header_params.items():
+                setattr(face, param, value)
         return face
+
+    def set_custom_header_params(self, header_params):
+        self.header_params = header_params
 
     def set_default_params(self, text_face):
         text_face.margin_top = 2
@@ -101,21 +115,25 @@ class Column:
         text_face.vt_align = 1
         text_face.border.width = 3
         text_face.border.color = "#ffffff"
+        text_face.fsize = 7
+        if not self.face_params is None:
+            for name, value in self.face_params.items():
+                setattr(text_face, name, value)
 
 
 class SimpleColorColumn(Column):
-    def __init__(self, values, header=None):
+    def __init__(self, values, header=None, use_col=True):
+        super().__init__(header)
         self.values = values
         self.header = header
+        self.use_col = use_col
 
-    def fromSeries(series, header=None, cls=None):
+    def fromSeries(series, header=None, cls=None, **args):
         values = series.to_dict()
-        print(values)
-        col_header = header if header!=None else series.name
         if cls is None:
-            return SimpleColorColumn(values, header=col_header)
+            return SimpleColorColumn(values, header=header, **args)
         else:
-            return cls(values, header=col_header)
+            return cls(values, header=header, **args)
 
     def get_face(self, index):
         index = int(index)
@@ -123,7 +141,7 @@ class SimpleColorColumn(Column):
         text_face = TextFace(val)
 
         # to recode
-        if val != 0 and index in self.values:
+        if self.use_col and val != 0 and index in self.values:
             text_face.inner_background.color = EteTree.BLUE
         self.set_default_params(text_face)
         return text_face
