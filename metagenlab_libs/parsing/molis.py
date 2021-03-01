@@ -19,7 +19,7 @@ def calculate_age(birth_date, prel_date):
     else:
         return age_years
 
-def parse_molis_xml(XML_TABLE, SQL_DB_PATH):
+def parse_molis_xml(XML_TABLE,):
     '''
 <Cell ss:StyleID="th1"><Data ss:Type="Spath_listtring">N° de demande</Data></Cell> 
  <Cell ss:StyleID="th4"><Data ss:Type="String">Période</Data></Cell> 
@@ -56,7 +56,7 @@ def parse_molis_xml(XML_TABLE, SQL_DB_PATH):
  <Cell ss:StyleID="th3"><Data ss:Type="String">COVTYP</Data></Cell>
  <Cell ss:StyleID="th3"><Data ss:Type="String">PREL</Data></Cell>
     '''
-    GEN_DB = gendb_utils.DB(SQL_DB_PATH)
+    GEN_DB = gendb_utils.DB()
     from xml.dom import minidom
     xmldoc = minidom.parse(XML_TABLE)
 
