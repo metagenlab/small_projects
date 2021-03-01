@@ -5,7 +5,7 @@ import yaml
 from datetime import datetime
 from metagenlab_libs import gendb_utils
 from airflow.hooks.base_hook import BaseHook
-from airflow.contrib.operators.slack_webhook_operator import SlackWebhookOperator
+from airflow.providers.slack.operators.slack_webhook import SlackWebhookOperator
 import string 
 import random
     

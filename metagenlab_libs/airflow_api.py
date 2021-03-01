@@ -1,5 +1,5 @@
 
-import requests
+import requests, base64
 from requests.auth import HTTPBasicAuth
 
 class AirflowApi():
@@ -9,15 +9,15 @@ class AirflowApi():
         
         self.API_ENDPOINT = f"{url}:{port}/api/experimental/"
         
-        self.headers = {'Content-Type': 'application/json',
-                        'Cache-Control': 'no-cache'}
-        
         self.username = username 
         
         self.password = password 
         
+        self.b64_pass = base64.b64encode(f'{self.username}:{self.password}'.encode("utf-8"))
         
-        
+        self.headers = {'Content-Type': 'application/json',
+                        'Cache-Control': 'no-cache'}
+        print(self.headers)
     def run_dag(self, 
                 dag_id, 
                 dag_json=False):
@@ -30,6 +30,7 @@ class AirflowApi():
             r = requests.post(url = self.API_ENDPOINT + t, auth=HTTPBasicAuth(self.username, self.password), headers=self.headers) 
         
         # {'execution_date': '2020-11-19T16:10:56+00:00', 'message': 'Created <DagRun epidemiology_with_jbrowse @ 2020-11-19 16:10:56+00:00: manual__2020-11-19T16:10:56+00:00, externally triggered: True>', 'run_id': 'manual__2020-11-19T16:10:56+00:00'}    
+        print(r.text)
         res = eval(r.text)
         
         return res
@@ -71,3 +72,16 @@ class AirflowApi():
 
         return target_run[0]
         
+
+'''
+API = AirflowApi(username='tpillone', 
+                 password='estrella3',
+                 url='http://155.105.138.104',
+                 port='8889')
+
+data = {'conf': {'fastq_list': '626,2110', 'analysis_id': 70}}
+
+#run_info = API.run_dag('analysis_sarscov2_typing', dag_json=data)
+
+print(API.retrieve_all_run_data("analysis_sarscov2_typing"))
+'''
