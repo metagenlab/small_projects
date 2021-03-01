@@ -50,6 +50,7 @@ class DB:
             import sqlite3
             self.db_path = GEN_settings.SQLITE_DB
             self.conn = sqlite3.connect(self.db_path)
+            self.engine_conn = self.conn
             self.cursor = self.conn.cursor()
             # placeholder for sql querries (differ between sqlite and mysql)
             self.spl = '?'
@@ -147,26 +148,34 @@ class DB:
                                 fastq_filter=None, 
                                 run_name_list=False,
                                 metadata_value_list=False,
-                                add_molis=False):
+                                add_molis=False,
+                                analysis_id_list=False):
         '''
         retrieve metadata from both sample and fastq metadata table
         '''
 
-        res_filter = ''
+        res_filter_fastq = ''
+        res_filter_sample = ''
         if term_list:
             print("term_list", term_list)
             term_filter = '","'.join(term_list)
-            res_filter += f'and t2.name in ("{term_filter}")\n' 
+            res_filter_fastq += f'and t2.name in ("{term_filter}")\n' 
+            res_filter_sample += f'and t2.name in ("{term_filter}")\n' 
         if fastq_filter:
             fastq_filter_str = ','.join([str(i) for i in fastq_filter])
-            res_filter += f'and fastq_id in ({fastq_filter_str})\n' 
+            res_filter_fastq += f'and fastq_id in ({fastq_filter_str})\n'
+            res_filter_sample += f'and fastq_id in ({fastq_filter_str})\n' 
         if run_name_list:
             run_filter = '","'.join(run_name_list)
-            res_filter += f'and run_name in ("{run_filter}")'
+            res_filter_fastq += f'and run_name in ("{run_filter}")'
+            res_filter_sample += f'and run_name in ("{run_filter}")'
         if metadata_value_list:
             metadata_filter = '","'.join(metadata_value_list)
-            res_filter += f'and t1.value in ("{metadata_filter}")'
-        
+            res_filter_fastq += f'and t1.value in ("{metadata_filter}")'
+            res_filter_sample += f'and t1.value in ("{metadata_filter}")'
+        if analysis_id_list:
+            metadata_filter = '","'.join(analysis_id_list)
+            res_filter_fastq += f'and t1.analysis_id in ("{metadata_filter}")'        
         
         sql = f'''
             select distinct fastq_id, t2.name,t1.value, run_name from GEN_fastqfilesmetadata t1 
@@ -174,7 +183,7 @@ class DB:
             inner join GEN_fastqfiles t3 on t1.fastq_id=t3.id 
             inner join GEN_runs t4 on t3.run_id=t4.id 
             where t3.fastq_prefix not like "Undetermined%"
-            {res_filter}
+            {res_filter_fastq}
             group by fastq_id, t2.name,t3.fastq_prefix,t4.run_date,t4.run_name,t4.read_length
             union 
             select distinct t3.fastq_id, t2.name,t1.value,run_name from GEN_samplemetadata t1 
@@ -183,7 +192,7 @@ class DB:
             inner join GEN_fastqfiles t4 on t3.fastq_id=t4.id 
             inner join GEN_runs t5 on t4.run_id=t5.id 
             where t4.fastq_prefix not like "Undetermined%"
-            {res_filter}
+            {res_filter_sample}
             group by t3.fastq_id, t2.name,t4.fastq_prefix,t5.run_date,t5.run_name,t5.read_length
             '''
         #print(sql)
@@ -272,7 +281,8 @@ class DB:
         df = pandas.read_csv(table_path, 
                                index_col=None,
                                header=0,
-                               sep="\t")
+                               sep=",")
+
         df = df.fillna(value=False)
         term_name2data = {}
         for n, row in df.iterrows():
@@ -280,11 +290,13 @@ class DB:
 
         return term_name2data
 
-    def qc_score(self, fastq_id_list, config):
+    def qc_score(self, fastq_id_list, config, analysis_id_list=False):
         
         metric2scoring = self.parse_CT_scoring_table(config["SCORING"])
 
-        df = self.get_fastq_metadata_list(term_list=list(metric2scoring.keys()), fastq_filter=fastq_id_list)
+        df = self.get_fastq_metadata_list(term_list=list(metric2scoring.keys()), 
+                                          fastq_filter=fastq_id_list,
+                                          analysis_id_list=analysis_id_list)
         # fastq_id, t2.name,t1.value, run_name
         # default score to 0
         fastq_id2n_fail = {i:0 for i in df["fastq_id"].to_list()}
@@ -460,24 +472,36 @@ class DB:
                       values_list,
                       sample_xls_id):
         
-        update_str = f'%s=%{self.spl}'
+        
 
-        update_str_comb = ','.join([update_str % colname for colname in col_names])
         # INSERT into GEN_sample(xlsx_sample_ID,species_name,date_received,sample_name,sample_type,analysis_type,description,molis_id,myseq_passage,run_date,date_registered,date_sample_modification,user_creation_id,user_modification_id) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(GEN_sample.xlsx_sample_ID) DO UPDATE SET xlsx_sample_ID=?,species_name=?,date_received=?,sample_name=?,sample_type=?,analysis_type=?,description=?,molis_id=?,myseq_passage=?,run_date=?,date_registered=?,date_sample_modification=?,user_creation_id=?,user_modification_id=?;
         # [29, 'Staphylococcus aureus', False, nan, 'strain', 'research', nan, 1306182530, nan, False, '2020-09-02', '2020-09-02', 2, 2, 29, 'Staphylococcus aureus', False, nan, 'strain', 'research', nan, 1306182530, nan, False, '2020-09-02', '2020-09-02', 2, 2]            
         # update all columns in case of conflict with xlsx_sample_id
         
         # NOTE: xlsx_sample_ID used as reference: if a row is updated in the xlsx table, the corresponding row is updated in the sql table
+        print(GEN_settings.DB_DRIVER)
         if GEN_settings.DB_DRIVER == 'sqlite':
-            sql_template = f'INSERT into GEN_sample(%s) values(%s)' \
-                        f' ON CONFLICT(GEN_sample.xlsx_sample_ID) DO UPDATE SET %s;' % (','.join(col_names),
-                                                                                        ','.join([f'{self.spl}']*len(col_names)),
-                                                                                        update_str_comb)
+            update_str = f'%s={self.spl}'
+            update_str_comb = ','.join([update_str % colname for colname in col_names])
+
+            sql_template = f'''
+
+            INSERT into GEN_sample(%s) values(%s)
+                            ON CONFLICT(GEN_sample.xlsx_sample_ID) DO UPDATE SET %s;''' % (','.join(col_names),
+                                                                                           ','.join([f'{self.spl}']*len(col_names)),
+                                                                                           update_str_comb)
         elif GEN_settings.DB_DRIVER == 'mysql':
-            sql_template = f'INSERT into GEN_sample(%s) values(%s)' \
-                           f' ON DUPLICATE KEY UPDATE %s;' % (','.join(col_names),
-                                                                  ','.join([f'{self.spl}']*len(col_names)),
-                                                                  update_str_comb)
+            update_str = f'%s=%{self.spl}'
+            update_str_comb = ','.join([update_str % colname for colname in col_names])
+            sql_template = '''
+            SET @NEW_AI = (SELECT MAX(`id`)+1 FROM `GEN_sample`);
+            SET @ALTER_SQL = CONCAT('ALTER TABLE `GEN_sample` AUTO_INCREMENT =', @NEW_AI);
+            PREPARE NEWSQL FROM @ALTER_SQL;
+            EXECUTE NEWSQL; 
+            INSERT into GEN_sample(%s) values(%s)
+            ON DUPLICATE KEY UPDATE %s;''' % (','.join(col_names),
+                                            ','.join([f'{self.spl}']*len(col_names)),
+                                            update_str_comb)
         else:                                                        
             raise IOError(f"Unknown db driver: {GEN_settings.DB_DRIVER}")
         
