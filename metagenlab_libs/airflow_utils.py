@@ -55,7 +55,7 @@ def write_sample_file(gen_db_path,
                       execution_folder,
                       analysis_id):
     
-    GEN_DB = gendb_utils.DB(gen_db_path)
+    GEN_DB = gendb_utils.DB()
     
     # update status
     gendb_utils.add_analysis_metadata(analysis_id, "airflow_execution_status", "running", update=True)
@@ -99,7 +99,7 @@ def write_snakemake_config_file(analysis_name,
                                 check_single_species=False,
                                 reference_docx=False):
 
-    GEN_DB = gendb_utils.DB(gen_db_path)
+    GEN_DB = gendb_utils.DB()
     
     # update status
     gendb_utils.add_analysis_metadata(analysis_id, "airflow_execution_status", "running", update=True)
