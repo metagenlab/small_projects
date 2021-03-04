@@ -677,6 +677,26 @@ class DB:
 
         return fastq2changes
 
+    def fastq_snp_table(self, fastq_id, analaysis_id):
+        
+        sql = f'select * from GEN_snps where fastq_id={fastq_id} and analysis_id={analaysis_id};'
+        return pandas.read_sql(sql, self.conn)
+
+    def snp_frequency(self, analaysis_id, percent=False):
+        
+        sql = f'select * from GEN_snps where analysis_id={analaysis_id};'
+        
+        df_snps = pandas.read_sql(sql, self.conn)
+
+        if not percent:
+            return df_snps.groupby("nucl_change")["nucl_change"].count().to_dict()
+        else:
+            mut_freq = pd.DataFrame(df_snps.groupby("nucl_change")["nucl_change"].count())
+            n_genomes = len(df_snps["fastq_id"].unique())
+            mut_freq.columns = ["mutation_frequency_count"]
+            mut_freq["mutation_frequency_percent"] = [(i/float(n_genomes))*100 for i in mut_freq["mutation_frequency_count"]]
+            return mut_freq.set_index("nucl_change")["mutation_frequency_percent"].to_dict()
+
 
     def add_QC_report(self, run_name, run_path):
         
