@@ -959,67 +959,39 @@ class DB:
         return gc_term_id
 
 
-    def get_genomes_description(self, entries=None, exclude_plasmids=False,
-            indexing="bioentry", indexing_type="str"):
+    def get_genomes_description(self, lst_plasmids=False):
         """
         Returns the description of the genome as it has been read from the genbank
-        files
-        * entries: selects the genomes with the given bioentry_ids, or returns all genomes if None
-        * exclude_plasmids: filters out the plasmids, implied if indexing is taxon_id
-        * indexing: index the description either on bioentry or on taxon ids
-        * indexing_type: the index can either be a str (useful to interact with etree) or as integers
+        files, indexed by taxon_id. The output also contains a flag has_plasmid
+        indicating whether the genome contains a plasmid or not.
         """
 
-        if indexing_type != "int" and indexing_type != "str":
-            raise RuntimeError(f"{indexing_type} not supported, must be int or str")
-
-        if indexing!="taxon_id" and indexing!="bioentry":
-            raise RuntimeError(f"{indexing_type} not supported, must be taxon_id or bioentry")
-
-        sel = "entry.bioentry_id" if indexing=="bioentry" else "entry.taxon_id"
-        where_clause_entry = ""
-        if entries != None:
-            string = ",".join("?" for i in entries)
-            where_clause_entry = f"entry.bioentry_id IN ({string}) "
-
-        exclusion_query = ""
-        if exclude_plasmids or indexing=="taxon_id":
-            exclusion_query = (
-                "INNER JOIN bioentry_qualifier_value AS plasmid "
-                "   ON plasmid.bioentry_id = entry.bioentry_id "
-                "INNER JOIN term AS plasmid_term "
-                "   ON plasmid_term.term_id=plasmid.term_id "
-                "   AND plasmid_term.name = \"plasmid\" "
-            )
-            where_clause_plasmid = " plasmid.value = 0 "
-
-        where_clause = ""
-        if entries!=None or exclude_plasmids:
-            tokens = []
-            if entries!=None:
-                tokens.append(where_clause_entry)
-            if exclude_plasmids:
-                tokens.append(where_clause_plasmid)
-            where_clauses = " AND ".join(tokens)
-            where_clause = f"WHERE {where_clauses} "
-
-        query = (
-            f"SELECT {sel}, entry.description "
-            " FROM bioentry AS entry "
-            f"{exclusion_query}"
-            f"{where_clause}"
-            " ORDER BY description;"
+        has_plasmid_query = (
+            "SELECT * "
+            "FROM bioentry_qualifier_value AS has_plasmid "
+            "INNER JOIN term AS pls_term ON pls_term.term_id=has_plasmid.term_id "
+            " AND pls_term.name=\"plasmid\" " 
+            "INNER JOIN bioentry AS plasmid ON has_plasmid.bioentry_id=plasmid.bioentry_id "
+            "WHERE plasmid.taxon_id=entry.taxon_id"
         )
-        if entries == None:
-            results = self.server.adaptor.execute_and_fetchall(query)
+        query = (
+            "SELECT entry.taxon_id, entry.description,  "
+            f" CASE WHEN EXISTS ({has_plasmid_query}) THEN 1 ELSE 0 END "
+            "FROM bioentry AS entry "
+            "INNER JOIN bioentry_qualifier_value AS orga " 
+            "INNER JOIN term AS orga_term ON orga.term_id=orga_term.term_id "
+            " AND orga_term.name=\"organism\" "
+            "GROUP BY taxon_id;" 
+        )
+        descr = self.server.adaptor.execute_and_fetchall(query)
+        columns = ["taxon_id", "description"]
+        if lst_plasmids:
+            columns.append("has_plasmid")
         else:
-            results = self.server.adaptor.execute_and_fetchall(query, entries)
+            # remove the third row to keep pandas happy
+            descr = ((taxon_id, entry_desc) for taxon_id, entry_desc, _ in descr)
 
-        hsh_results = {}
-        for line in results:
-            idx = line[0] if indexing_type == "int" else str(line[0])
-            hsh_results[idx] = line[1].strip()
-        return hsh_results
+        return DB.to_pandas_frame(descr, columns).set_index(["taxon_id"])
 
 
     def get_genomes_infos(self):

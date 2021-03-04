@@ -60,11 +60,14 @@ class EteTree:
 
     def rename_leaves(self, hsh_names, default_val="-"):
         self.default_val = default_val
+        if not isinstance(hsh_names, dict):
+            raise("Expects dict type for hsh_names")
+
         self.leaves_name = hsh_names
 
     def render(self, destination, **kwargs):
         for leaf in self.tree.iter_leaves():
-            if self.leaves_name != None:
+            if not self.leaves_name is None:
                 leaf.add_face(self.get_leaf_name(leaf.name), 0, "branch-right")
 
             for col_no, column in enumerate(self.columns):
