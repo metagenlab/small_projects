@@ -56,7 +56,10 @@ class DB:
             self.spl = '?'
 
 
-    def get_fastq_metadata(self, metric_name, index_str=True, analysis_id=False):
+    def get_fastq_metadata(self, 
+                           metric_name, 
+                           index_str=True, 
+                           analysis_id=False):
         
         if analysis_id:
             analysis_filter = f'and analysis_id={analysis_id}'
@@ -77,6 +80,24 @@ class DB:
             return {str(i[0]):i[1] for i in self.cursor.fetchall()}
         else:
             return {int(i[0]):i[1] for i in self.cursor.fetchall()}
+
+    def get_fastq_metadata_v2(self, 
+                              metric_name):
+        
+
+        sql = f'''select analysis_id,fastq_id,value from  GEN_fastqfilesmetadata t1
+                  inner join GEN_term t2 on t1.term_id=t2.id
+                  where t2.name="{metric_name}"       
+                  union
+                  select NULL as analysis_id, t3.fastq_id,t1.value from  GEN_samplemetadata t1
+                  inner join GEN_term t2 on t1.term_id=t2.id
+                  inner join GEN_fastqtosample t3 on t1.sample_id=t3.sample_id
+                  where t2.name="{metric_name}"
+                  '''
+        print(sql)
+        return pandas.read_sql(sql, self.conn)
+           
+        
 
     def get_sample_metadata(self, metric_name, index_str=True):
         sql = f'''select t1.sample_id,t1.value from GEN_samplemetadata t1
@@ -149,9 +170,11 @@ class DB:
                                 run_name_list=False,
                                 metadata_value_list=False,
                                 add_molis=False,
-                                analysis_id_list=False):
+                                analysis_id_list=False,
+                                subproject_id_list=False):
         '''
         retrieve metadata from both sample and fastq metadata table
+        TODO will curently combine dta from multiple anlayses => should retun analysis_id as well
         '''
 
         res_filter_fastq = ''
@@ -176,12 +199,16 @@ class DB:
         if analysis_id_list:
             metadata_filter = '","'.join(analysis_id_list)
             res_filter_fastq += f'and t1.analysis_id in ("{metadata_filter}")'        
+        if subproject_id_list:
+            metadata_filter = '","'.join(subproject_id_list)
+            res_filter_fastq += f'and t5.subproject_id in ("{metadata_filter}")'   
         
         sql = f'''
             select distinct fastq_id, t2.name,t1.value, run_name from GEN_fastqfilesmetadata t1 
             inner join GEN_term t2 on t1.term_id=t2.id 
             inner join GEN_fastqfiles t3 on t1.fastq_id=t3.id 
             inner join GEN_runs t4 on t3.run_id=t4.id 
+            left join GEN_projectanalysis t5 on t1.analysis_id=t5.analysis_id
             where t3.fastq_prefix not like "Undetermined%"
             {res_filter_fastq}
             group by fastq_id, t2.name,t3.fastq_prefix,t4.run_date,t4.run_name,t4.read_length
@@ -195,10 +222,73 @@ class DB:
             {res_filter_sample}
             group by t3.fastq_id, t2.name,t4.fastq_prefix,t5.run_date,t5.run_name,t5.read_length
             '''
-        #print(sql)
-        # AND t4.run_name like "%_CleanPlex"
-        # 
+
         df = pandas.read_sql(sql, self.conn)
+        
+        return df
+
+
+    def get_fastq_metadata_list_v2(self, 
+                                   term_list=False, 
+                                   fastq_filter=None, 
+                                   run_name_list=False,
+                                   metadata_value_list=False,
+                                   add_molis=False,
+                                   analysis_id_list=False,
+                                   subproject_id_list=False):
+        '''
+        retrieve metadata from both sample and fastq metadata table
+        TODO will curently combine dta from multiple anlayses => should retun analysis_id as well
+        '''
+
+        res_filter_fastq = ''
+        res_filter_sample = ''
+        if term_list:
+            print("term_list", term_list)
+            term_filter = '","'.join(term_list)
+            res_filter_fastq += f'and t2.name in ("{term_filter}")\n' 
+            res_filter_sample += f'and t2.name in ("{term_filter}")\n' 
+        if fastq_filter:
+            fastq_filter_str = ','.join([str(i) for i in fastq_filter])
+            res_filter_fastq += f'and fastq_id in ({fastq_filter_str})\n'
+            res_filter_sample += f'and fastq_id in ({fastq_filter_str})\n' 
+        if run_name_list:
+            run_filter = '","'.join(run_name_list)
+            res_filter_fastq += f'and run_name in ("{run_filter}")'
+            res_filter_sample += f'and run_name in ("{run_filter}")'
+        if metadata_value_list:
+            metadata_filter = '","'.join(metadata_value_list)
+            res_filter_fastq += f'and t1.value in ("{metadata_filter}")'
+            res_filter_sample += f'and t1.value in ("{metadata_filter}")'
+        if analysis_id_list:
+            metadata_filter = '","'.join(analysis_id_list)
+            res_filter_fastq += f'and t1.analysis_id in ("{metadata_filter}")'        
+        if subproject_id_list:
+            metadata_filter = '","'.join(subproject_id_list)
+            res_filter_fastq += f'and t5.subproject_id in ("{metadata_filter}")'   
+        
+        sql = f'''
+            select distinct t5.analysis_id,fastq_id, t2.name,t1.value, run_name from GEN_fastqfilesmetadata t1 
+            inner join GEN_term t2 on t1.term_id=t2.id 
+            inner join GEN_fastqfiles t3 on t1.fastq_id=t3.id 
+            inner join GEN_runs t4 on t3.run_id=t4.id 
+            left join GEN_projectanalysis t5 on t1.analysis_id=t5.analysis_id
+            where t3.fastq_prefix not like "Undetermined%"
+            {res_filter_fastq}
+            group by fastq_id, t2.name,t3.fastq_prefix,t4.run_date,t4.run_name,t4.read_length
+            union 
+            select distinct NULL as analysis_id, t3.fastq_id, t2.name,t1.value,run_name from GEN_samplemetadata t1 
+            inner join GEN_term t2 on t1.term_id=t2.id 
+            inner join GEN_fastqtosample t3 on t1.sample_id=t3.sample_id
+            inner join GEN_fastqfiles t4 on t3.fastq_id=t4.id 
+            inner join GEN_runs t5 on t4.run_id=t5.id 
+            where t4.fastq_prefix not like "Undetermined%"
+            {res_filter_sample}
+            group by t3.fastq_id, t2.name,t4.fastq_prefix,t5.run_date,t5.run_name,t5.read_length
+            '''
+
+        df = pandas.read_sql(sql, self.conn)
+
 
         if add_molis:
             print("adding molis")
@@ -259,9 +349,10 @@ class DB:
         # left join because some fastq won't have match in the sample table
         # possible problem: fastq prefix match with multiple samples from different species
         # in that case: remove species name
-        sql = f'''select distinct t1.id as fastq_id,fastq_prefix,R1,R2,species_name,molis_id from GEN_fastqfiles t1 
+        sql = f'''select distinct t1.id as fastq_id,fastq_prefix,R1,R2,species_name,molis_id, sample_name,t4.run_name from GEN_fastqfiles t1 
                 left join GEN_fastqtosample t2 on t1.id=t2.fastq_id
-                left join GEN_sample t3 on t2.sample_id=t3.id 
+                left join GEN_sample t3 on t2.sample_id=t3.id
+                inner join GEN_runs t4 on t1.run_id=t4.id
                 where t1.id in ("{fastq_list_filter}");
             '''
         print(sql,)
@@ -418,11 +509,14 @@ class DB:
                                   filearc_folder])
         self.conn.commit()
 
-    def compare_samples(self, fastq_id_1, fastq_id2,print_data=False):
+    def compare_samples(self, 
+                        fastq_id_1, 
+                        fastq_id2,
+                        alt_freq_cutoff=90):
         
-        sql = f'select * from GEN_snps where fastq_id={fastq_id_1}'
+        sql = f'select * from GEN_snps where fastq_id={fastq_id_1} and alt_percent>{alt_freq_cutoff}'
         df1 = pandas.read_sql(sql, self.conn)
-        sql2 = f'select * from GEN_snps where fastq_id={fastq_id2}'
+        sql2 = f'select * from GEN_snps where fastq_id={fastq_id2} and alt_percent>{alt_freq_cutoff}'
         df2 = pandas.read_sql(sql2, self.conn)
         df1["VAR"] = df1["ref"] + df1["position"].astype(str) + df1["alt"]
         df2["VAR"] = df2["ref"] + df2["position"].astype(str) + df2["alt"]
@@ -434,9 +528,6 @@ class DB:
         unique_df1 = df1_vars.difference(df2_vars)
         unique_df2= df2_vars.difference(df1_vars)
         union = df1_vars.union(df2_vars)
-        if print_data:
-            print("unique_1", df1_vars)
-            print("unique_2", df2_vars)
 
         n_shared = len(shared)
         n_unique_df1 = len(unique_df1)
@@ -445,13 +536,83 @@ class DB:
         n_diffs = n_unique_df1 +  n_unique_df2
         return [fastq_id_1, fastq_id2, n_union, n_shared, n_diffs, n_unique_df1, n_unique_df2]
 
-    def parwise_snps_comp(self, fastq_list):
+    def create_search_index(self,):
+
+        # sample table
+        # sqlite: fts5 mysql: FULLTEXT
+        # metadata 
+        pass
+
+
+
+    def searchdb(self, term, search_type="exact_match"):
+
+        if search_type=="exact_match":
+            # search sample table 
+            # sample_name, xlsx_sample_id, molis_id
+            sql_sample = '''select t1.id,t2.fastq_id,sample_name, xlsx_sample_id, molis_id from GEN_sample t1 
+                            inner join GEN_fastqtosample t2 on t1.id=t2.sample_id where t1.id=? or sample_name=? or xlsx_sample_id=? or molis_id=? limit 1000'''
+
+            # search metadata fastq 
+            sql_fastq_metadata = '''select t2.sample_id,t1.fastq_id, value,t3.name from GEN_fastqfilesmetadata t1 
+                                    inner join GEN_fastqtosample t2 on t1.fastq_id=t2.fastq_id 
+                                    inner join GEN_term t3 on t1.term_id=t3.id
+                                    where t1.fastq_id=? or value=? limit 1000
+                                '''
+
+            # search metadata sample
+            
+            sql_sample_metadata = '''select t1.sample_id,t2.fastq_id, value,t3.name from GEN_samplemetadata t1 
+                                     inner join GEN_fastqtosample t2 on t1.sample_id=t2.sample_id 
+                                     inner join GEN_term t3 on t1.term_id=t3.id
+                                     where value=? limit 1000
+                                   '''
+
+            hits_sample_df = pandas.read_sql(sql_sample, self.conn, params=[term,term,term,term])
+            hits_fastq_metadata_df = pandas.read_sql(sql_fastq_metadata, self.conn, params=[term,term])
+            hits_sample_metadata_df = pandas.read_sql(sql_sample_metadata, self.conn, params=[term])
+
+            nr_fastq_list = [] 
+            if not hits_sample_df.empty:
+                nr_fastq_list += hits_sample_df["fastq_id"].to_list()
+            if not hits_sample_metadata_df.empty:
+                nr_fastq_list += hits_sample_metadata_df["fastq_id"].to_list()
+            if not hits_fastq_metadata_df.empty:
+                nr_fastq_list += hits_fastq_metadata_df["fastq_id"].to_list()
+
+            nr_fastq_list =  [str(i) for i in set(nr_fastq_list)]
+
+            detail_df = self.get_fastq_and_sample_data(nr_fastq_list)[["fastq_id","fastq_prefix","run_name","species_name","molis_id", "sample_name"]]
+
+            if not hits_sample_metadata_df.empty:
+                # add metadata to detail_df
+                detail_df = detail_df.set_index("fastq_id").join(hits_sample_metadata_df.set_index("fastq_id"))
+            if not hits_fastq_metadata_df.empty:
+                if 'fastq_id' in detail_df.columns:
+                    detail_df = detail_df.set_index("fastq_id").join(hits_fastq_metadata_df[["fastq_id", "value", "name"]].set_index("fastq_id"))
+                else:
+                    detail_df = detail_df.join(hits_fastq_metadata_df[["fastq_id", "value", "name"]].set_index("fastq_id"), rsuffix='r')
+            
+
+            nr_fastq_list_filter = ','.join(nr_fastq_list)
+
+            sql_analyse = f'''select distinct fastq_id,analysis_id,start_date,workflow_name from GEN_fastqset t1 
+                              inner join GEN_analysis t2 on t1.analysis_id=t2.id 
+                              inner join GEN_workflow t3 on t2.workflow_id=t3.id 
+                              where fastq_id in ({nr_fastq_list_filter})'''
+
+            analyses = pandas.read_sql(sql_analyse, self.conn)
+
+            return detail_df, analyses
+            
+
+    def parwise_snps_comp(self, fastq_list, alt_freq_cutoff=90):
         import itertools
         comb = itertools.combinations(fastq_list, 2)
         res = []
         complete_mat = []
         for one_pair in comb:
-            vals = self.compare_samples(one_pair[0], one_pair[1],print_data=False)
+            vals = self.compare_samples(one_pair[0], one_pair[1], alt_freq_cutoff=alt_freq_cutoff)
             res.append(vals)
             complete_mat.append(vals)
             # reverse comp
