@@ -552,7 +552,7 @@ class DB:
         return hsh_results
 
 
-    def get_ko_count_cat(self, category=None, bioentries=None, category_name=None):
+    def get_ko_count_cat(self, category=None, taxon_ids=None, category_name=None):
         if category!=None and category_name!=None:
             raise RuntimeError("Selection on both category and category name not supported")
         if category==None and category_name==None:
@@ -560,10 +560,10 @@ class DB:
         sel = ""
 
         args = []
-        if bioentries != None:
-            sel_str = ",".join("?" for entry in bioentries)
+        if taxon_ids != None:
+            sel_str = ",".join("?" for _ in taxon_ids)
             sel = f" AND fet.bioentry_id IN ({sel_str})"
-            args = bioentries
+            args = taxon_ids
 
         if category != None:
             where = f"WHERE module.subclass = ? AND is_signature_module = 0 {sel}"
@@ -576,17 +576,19 @@ class DB:
             args = [category_name] + args
 
         query = (
-            "SELECT fet.bioentry_id, module.module_id, ktm.ko_id, COUNT(*) "
+            "SELECT entry.taxon_id, module.module_id, ktm.ko_id, COUNT(*) "
             "FROM ko_module_def AS module "
             "INNER JOIN ko_to_module AS ktm ON module.module_id = ktm.module_id "
             "INNER JOIN ko_hits AS hit ON hit.ko_id = ktm.ko_id "
             "INNER JOIN sequence_hash_dictionnary AS hsh ON hit.hsh = hsh.hsh "
             "INNER JOIN seqfeature AS fet ON fet.seqfeature_id = hsh.seqid "
+            "INNER JOIN bioentry AS entry ON fet.bioentry_id=entry.bioentry_id "
             f"{where}"
-            "GROUP BY fet.bioentry_id, module.module_id, ktm.ko_id;"
+            "GROUP BY entry.taxon_id, module.module_id, ktm.ko_id;"
         )
         results = self.server.adaptor.execute_and_fetchall(query, args)
-        return DB.to_pandas_frame(results, ["bioentry", "module_id", "KO", "count"])
+        columns = ["taxon_id", "module_id", "KO", "count"]
+        return DB.to_pandas_frame(results, columns).set_index(["taxon_id", "module_id", "KO"])
 
 
     def get_modules_info(self, modules_id, as_pandas=False):
@@ -963,7 +965,8 @@ class DB:
         """
         Returns the description of the genome as it has been read from the genbank
         files, indexed by taxon_id. The output also contains a flag has_plasmid
-        indicating whether the genome contains a plasmid or not.
+        indicating whether the genome contains a plasmid or not, if the lst_plasmid flag
+        has been set.
         """
 
         has_plasmid_query = (
@@ -1417,45 +1420,46 @@ class DB:
         return df.set_index(["seqid"])
 
 
-    # For each genome, return the number of gene that were assigned
-    # to each orthogroup passed in argument
-    def get_og_count(self, lookup_term, search_on="orthogroup", indexing="bioentry"):
-        if indexing=="bioentry":
-            indexing_term = "feature.bioentry_id"
-        elif indexing=="taxon_id":
-            indexing_term = "entry.taxon_id"
-        elif indexing=="seqid":
-            indexing_term = "og.seqid"
-        else:
-            raise RuntimeError(f"Unsupported index {search_on}, must use taxon_id, bioentry or seqid")
+    def get_og_count(self, lookup_terms, search_on="taxid", diff_plasmid=False):
+        """
+        This function returns a pandas dataframe containing the orthogroup
+        count for a set of taxon_ids. The user can differentiate between the chromosome
+        and the plasmid. TODO: The plasmid part is to be implemented.
 
-        if search_on=="bioentry":
-            where_clause = "entry.bioentry_id"
-        elif search_on=="seqid":
-            where_clause = "og.seqid"
+        diff_plasmid: should chromsome and plasmid be considered separately. If set to True, the count
+                for chromosome and plasmids will be done separately.
+        lookup_term: the terms that will be search. Either a list of taxids, of orthogroup or of seqids.
+        search_on: can be either orthogroup, seqid or taxid. Specifies what lookup_term is.
+
+        The index of the table depends on whether the diff_plasmid flag was set. 
+        If the flag is set, MultiIndex(taxid, is_plasmid). If it is not set Index(taxid)
+        """
+
+        if search_on=="taxid":
+            where_clause = "entry.taxon_id"
         elif search_on=="orthogroup":
             where_clause = "og.orthogroup"
         else:
             raise RuntimeError(f"Unsupported search {search_on}, must use orthogroup, bioentry or seqid")
 
-        entries = ",".join("?" for i in lookup_term)
+        entries = ",".join("?" for i in lookup_terms)
         query = (
-            f"SELECT {indexing_term}, orthogroup, count(*) "
+            f"SELECT entry.taxon_id, orthogroup, count(*) "
             "FROM bioentry AS entry "
             "INNER JOIN seqfeature AS feature ON entry.bioentry_id = feature.bioentry_id " 
             "INNER JOIN og_hits AS og ON og.seqid = feature.seqfeature_id "
             f"WHERE {where_clause} IN ({entries}) "
-            f"GROUP BY {indexing_term}, orthogroup;"
+            f"GROUP BY entry.taxon_id, orthogroup;"
         )
-        results = self.server.adaptor.execute_and_fetchall(query, lookup_term)
-        df = DB.to_pandas_frame(results, [indexing, "orthogroup", "count"])
+        results = self.server.adaptor.execute_and_fetchall(query, lookup_terms)
+        df = DB.to_pandas_frame(results, [search_on, "orthogroup", "count"])
         if len(df.index) == 0:
             return df
 
-        if indexing=="taxon_id" or indexing=="bioentry":
-            df = df.set_index([indexing, "orthogroup"]).unstack(level=0, fill_value=0)
+        if search_on=="taxid" or search_on=="orthogroup":
+            df = df.set_index([search_on, "orthogroup"]).unstack(level=0, fill_value=0)
             df.columns = [col for col in df["count"].columns.values]
-        elif indexing=="seqid":
+        elif search_on=="seqid":
             df = df[[indexing, "orthogroup"]]
             df = df.set_index([indexing])
         return df

@@ -61,7 +61,7 @@ class EteTree:
     def rename_leaves(self, hsh_names, default_val="-"):
         self.default_val = default_val
         if not isinstance(hsh_names, dict):
-            raise("Expects dict type for hsh_names")
+            raise Exception("Expects dict type for hsh_names")
 
         self.leaves_name = hsh_names
 
@@ -89,6 +89,7 @@ class Column:
         self.header = header
         self.header_params = header_params
         self.face_params = face_params
+        self.face_params = None
 
     def get_header(self):
         if self.header == None:
@@ -189,9 +190,9 @@ class KOAndCompleteness(Column):
         * one for the number of ko in the module
         * one for the number of missing kos
         """
+        super().__init__(header=module)
         self.values = n_kos
         self.n_missing = n_missing_kos
-        self.header = module
 
     def get_face(self, index):
         index = int(index)
