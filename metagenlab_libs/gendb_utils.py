@@ -2,6 +2,7 @@ import pandas
 from django.conf import settings
 from django.db import IntegrityError
 import os 
+import yaml 
 
 # setup django do be able to access django db models 
 import GEN_database.settings as GEN_settings
@@ -24,6 +25,8 @@ class DB:
         
         
         db_type = GEN_settings.DB_DRIVER
+
+        self.AIRFLOW_CONFIG =  yaml.safe_load(open(settings.AIRFLOW_CONF, 'r'))
 
         if db_type != "sqlite":
             '''
@@ -82,17 +85,22 @@ class DB:
             return {int(i[0]):i[1] for i in self.cursor.fetchall()}
 
     def get_fastq_metadata_v2(self, 
-                              metric_name):
+                              metric_name,
+                              fastq_id_list=False):
+        fastq_filter = ''
         
-
+        if fastq_id_list:
+            fastq_filter_str = '","'.join([str(i) for i in fastq_id_list])
+            fastq_filter += f'and fastq_id in ("{fastq_filter_str}") '
+        
         sql = f'''select analysis_id,fastq_id,value from  GEN_fastqfilesmetadata t1
                   inner join GEN_term t2 on t1.term_id=t2.id
-                  where t2.name="{metric_name}"       
+                  where t2.name="{metric_name}" {fastq_filter}       
                   union
                   select NULL as analysis_id, t3.fastq_id,t1.value from  GEN_samplemetadata t1
                   inner join GEN_term t2 on t1.term_id=t2.id
                   inner join GEN_fastqtosample t3 on t1.sample_id=t3.sample_id
-                  where t2.name="{metric_name}"
+                  where t2.name="{metric_name}" {fastq_filter}
                   '''
         print(sql)
         return pandas.read_sql(sql, self.conn)
@@ -163,6 +171,22 @@ class DB:
 
         return pandas.read_sql(sql, self.conn)
 
+    def get_workflow_config(self, workflow_id):
+        from GEN.models import Workflow
+        
+        workflow_name = Workflow.objects.filter(id=workflow_id)[0].workflow_name
+        base = self.AIRFLOW_CONFIG["WORKFLOW"][workflow_name]["BASE_METRICS"]
+        add = self.AIRFLOW_CONFIG["WORKFLOW"][workflow_name]["ADDITIONAL_METRICS"]
+        color = self.AIRFLOW_CONFIG["WORKFLOW"][workflow_name]["APP_COLOR_FACTOR"]
+        # APP_COLOR_FACTOR
+        # ADDITIONAL_METRICS
+        # BASE_METRICS
+        return base, add, color
+
+    def get_workflows(self,):
+        from GEN.models import Workflow
+        return {i.id:i.workflow_name for i in Workflow.objects.all() }
+
 
     def get_fastq_metadata_list(self, 
                                 term_list=False, 
@@ -171,7 +195,8 @@ class DB:
                                 metadata_value_list=False,
                                 add_molis=False,
                                 analysis_id_list=False,
-                                subproject_id_list=False):
+                                subproject_id_list=False,
+                                workflow_id=False):
         '''
         retrieve metadata from both sample and fastq metadata table
         TODO will curently combine dta from multiple anlayses => should retun analysis_id as well
@@ -179,6 +204,7 @@ class DB:
 
         res_filter_fastq = ''
         res_filter_sample = ''
+        workflow_filter = ''
         if term_list:
             print("term_list", term_list)
             term_filter = '","'.join(term_list)
@@ -201,7 +227,10 @@ class DB:
             res_filter_fastq += f'and t1.analysis_id in ("{metadata_filter}")'        
         if subproject_id_list:
             metadata_filter = '","'.join(subproject_id_list)
-            res_filter_fastq += f'and t5.subproject_id in ("{metadata_filter}")'   
+            res_filter_fastq += f'and t5.subproject_id in ("{metadata_filter}")'  
+        if workflow_id:
+            workflow_filter = 'inner join GEN_analysis t6 on t1.analysis_id=t6.id'
+            res_filter_fastq += f'and t6.workflow_id={workflow_id}'
         
         sql = f'''
             select distinct fastq_id, t2.name,t1.value, run_name from GEN_fastqfilesmetadata t1 
@@ -209,6 +238,7 @@ class DB:
             inner join GEN_fastqfiles t3 on t1.fastq_id=t3.id 
             inner join GEN_runs t4 on t3.run_id=t4.id 
             left join GEN_projectanalysis t5 on t1.analysis_id=t5.analysis_id
+            {workflow_filter}
             where t3.fastq_prefix not like "Undetermined%"
             {res_filter_fastq}
             group by fastq_id, t2.name,t3.fastq_prefix,t4.run_date,t4.run_name,t4.read_length
@@ -238,7 +268,7 @@ class DB:
                                    subproject_id_list=False):
         '''
         retrieve metadata from both sample and fastq metadata table
-        TODO will curently combine dta from multiple anlayses => should retun analysis_id as well
+        TODO will curently combine dta from multiple anlayses => should return analysis_id as well
         '''
 
         res_filter_fastq = ''
@@ -331,9 +361,9 @@ class DB:
 
 
 
-    def get_fastq_metadata_stats(self, term_list):
+    def get_fastq_metadata_stats(self, term_list, analysis_id_list):
 
-        df = self.get_fastq_metadata_list(term_list)[["fastq_id","name","value"]]
+        df = self.get_fastq_metadata_list(term_list, analysis_id_list=analysis_id_list)[["fastq_id","name","value"]]
         
         df["value"] = pandas.to_numeric(df["value"])
         term2median = df.groupby(["name"])['value'].median().round(3).to_dict()
@@ -543,6 +573,20 @@ class DB:
         # metadata 
         pass
 
+    def get_analysis_overview(self, analysis_id_list):
+        
+        analysis_filter = '","'.join([str(i) for i in analysis_id_list])
+
+        sql_analyse_metadata = f'''select t1.analysis_id,t4.value as description, start_date,workflow_name,count(*) as n_samples,t2.status from GEN_fastqset t1 
+                                    inner join GEN_analysis t2 on t1.analysis_id=t2.id 
+                                    inner join GEN_workflow t3 on t2.workflow_id=t3.id 
+                                    inner join GEN_analysismetadata t4 on t1.analysis_id=t4.analysis_id
+                                    inner join GEN_term t5 on t4.term_id=t5.id
+                                    where t5.name='description' and t1.analysis_id in ("{analysis_filter}") group by t1.analysis_id'''
+
+        analyses = pandas.read_sql(sql_analyse_metadata, self.conn)
+
+        return analyses
 
 
     def searchdb(self, term, search_type="exact_match"):
@@ -596,22 +640,62 @@ class DB:
 
             nr_fastq_list_filter = ','.join(nr_fastq_list)
 
-            sql_analyse = f'''select distinct fastq_id,analysis_id,start_date,workflow_name from GEN_fastqset t1 
-                              inner join GEN_analysis t2 on t1.analysis_id=t2.id 
-                              inner join GEN_workflow t3 on t2.workflow_id=t3.id 
+            sql_analyse = f'''select distinct fastq_id,analysis_id from GEN_fastqset t1 
                               where fastq_id in ({nr_fastq_list_filter})'''
-
+            
             analyses = pandas.read_sql(sql_analyse, self.conn)
 
-            return detail_df, analyses
-            
 
-    def parwise_snps_comp(self, fastq_list, alt_freq_cutoff=90):
+            # add qc results                       
+            df_qc = self.get_fastq_metadata_v2("qc_status", fastq_id_list=nr_fastq_list)
+            analyses = pandas.merge(analyses, df_qc,  how='left', left_on=['fastq_id','analysis_id'], right_on = ['fastq_id','analysis_id'])
+
+            # add n samples, description
+            analyse_metadata = self.get_analysis_overview(analyses["analysis_id"].to_list())
+            analyses = pandas.merge(analyses, analyse_metadata,  how='left', left_on=['analysis_id'], right_on = ['analysis_id'])
+
+            return detail_df, analyses
+    
+    def compare_snp_tables(self, fasq_id_list, min_alt_freq):
+
+        df_list = [self.fastq_snp_table(fastq_id, min_alt_freq) for fastq_id in fasq_id_list]
+        
+        df_1 = df_list[0].set_index("nucl_change")[['depth', 'alt_percent']]
+        
+        print("df_1", df_1.head())
+
+        df_1.columns = [f"depth_{fasq_id_list[0]}", f"alt_percent_{fasq_id_list[0]}"]
+        
+        for n,df in enumerate(df_list[1:]):
+            #print(n)
+            df_2 = df.set_index("nucl_change")[['depth', 'alt_percent']]
+            df_2.columns = [f"depth_{fasq_id_list[n+1]}", f"alt_percent_{fasq_id_list[n+1]}"]
+            df_1 = df_1.join(df_2, how='outer')
+        
+        print("combined", df_1.head())
+
+        df_1["diff"] = 0
+        #print(df_1)
+        #print(df_1.isna().any(axis=1))
+        df_1.loc[df_1.isna().any(axis=1), "diff"] = 1
+        #print(df_1[df_1.isna().any(axis=1)])
+    
+        snp2frequency = self.snp_frequency(min_alt_freq=min_alt_freq)
+
+        summary_data, matrix = self.parwise_snps_comp(fasq_id_list, min_alt_freq)
+
+        df_1["frequency"] = [snp2frequency[i] for i in df_1.index]
+
+        return df_1, summary_data
+
+    def parwise_snps_comp(self, fastq_list, alt_freq_cutoff=70):
         import itertools
         comb = itertools.combinations(fastq_list, 2)
+
         res = []
         complete_mat = []
         for one_pair in comb:
+            print("one_pair", one_pair)
             vals = self.compare_samples(one_pair[0], one_pair[1], alt_freq_cutoff=alt_freq_cutoff)
             res.append(vals)
             complete_mat.append(vals)
@@ -673,7 +757,6 @@ class DB:
 
         return self.get_sample_id(sample_xls_id)
   
-
     def get_mapped_fastq_list(self,):
 
         sql = 'select distinct fastq_id from GEN_fastqtosample'
@@ -827,10 +910,10 @@ class DB:
             term_id2term_name[term_id] = term.name
         return term_id2term_name
 
-    def fastq_mutation(self, aa_change_list):
+    def fastq_mutation(self, aa_change_list, analysis_id):
         
         change_filter = '","'.join(aa_change_list)
-        sql = f'select fastq_id,aa_change from GEN_snps where aa_change in ("{change_filter}");'
+        sql = f'select fastq_id,aa_change from GEN_snps where aa_change in ("{change_filter}") and analysis_id={analysis_id};'
         df = pandas.read_sql(sql, self.conn)
         fastq2changes = {i:[] for i in df["fastq_id"].to_list()}
         for n, row in df.iterrows():
@@ -838,15 +921,51 @@ class DB:
 
         return fastq2changes
 
-    def fastq_snp_table(self, fastq_id, analaysis_id):
+
+    def snp_to_fastq(self, nucl_change, min_alt_freq=70, type='nucl_change'):
         
-        sql = f'select * from GEN_snps where fastq_id={fastq_id} and analysis_id={analaysis_id};'
+        sql = f'select distinct analysis_id,fastq_id,position,ref,alt,gene,aa_change,nucl_change,depth,ref_count,alt_count,alt_percent from GEN_snps where {type}="{nucl_change}" and alt_percent>{min_alt_freq};'
+
+        df = pandas.read_sql(sql, self.conn)
+
+        sql2 = f'select distinct fastq_id,position,ref,alt,gene,aa_change,nucl_change,depth,ref_count,alt_count,alt_percent from GEN_snps where alt_percent>{min_alt_freq};'
+
+        df2 = pandas.read_sql(sql2, self.conn)
+
+        # add number of snp present in each sample
+        fastq_id2n_snps = df2.groupby(["fastq_id"])["fastq_id"].count().to_dict()
+        df["n_snps"] = [fastq_id2n_snps[i] for i in df["fastq_id"]]
+
+        # add run name
+        fastq2run_name = self.get_fastq_id2run_name()
+        df["run_name"] = [fastq2run_name[i] for i in df["fastq_id"]]
+
+        # add patient id
+        fastq_id2patient_id = self.get_fastq_metadata("patient_id", index_str=True)
+        df["patient_id"] = [fastq_id2patient_id[i] if i in fastq_id2patient_id else '-' for i in df["fastq_id"]]
+
+        # add patient id
+        fastq_id2pangolin_lineage = self.get_fastq_metadata("pangolin_lineage", index_str=True)
+        df["pangolin_lineage"] = [fastq_id2pangolin_lineage[i] if i in fastq_id2pangolin_lineage else '-' for i in df["fastq_id"]]
+
+        return df
+
+
+    def fastq_snp_table(self, fastq_id, min_alt_freq=70):
+        
+        sql = f'select distinct fastq_id,reference,position,ref,alt,effect_id,gene,aa_position,aa_change,nucl_change,depth,ref_count,alt_count,alt_percent from GEN_snps where fastq_id={fastq_id} and alt_percent>{min_alt_freq};'
+
         return pandas.read_sql(sql, self.conn)
 
-    def snp_frequency(self, analaysis_id, percent=False):
-        
-        sql = f'select * from GEN_snps where analysis_id={analaysis_id};'
-        
+    def snp_frequency(self, 
+                      analysis_id=False, 
+                      percent=False,
+                      min_alt_freq=70):
+        if analysis_id:
+            sql = f'select distinct fastq_id,nucl_change from GEN_snps where analysis_id={analysis_id} and alt_percent>{min_alt_freq} ;'
+        else:
+            sql = f'select distinct fastq_id,nucl_change from GEN_snps where alt_percent > {min_alt_freq}'
+
         df_snps = pandas.read_sql(sql, self.conn)
 
         if not percent:
