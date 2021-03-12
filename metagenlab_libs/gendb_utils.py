@@ -26,7 +26,7 @@ class DB:
         
         db_type = GEN_settings.DB_DRIVER
 
-        self.AIRFLOW_CONFIG =  yaml.safe_load(open(settings.AIRFLOW_CONF, 'r'))
+        self.AIRFLOW_CONFIG =  yaml.safe_load(open(GEN_settings.AIRFLOW_CONF, 'r'))
 
         if db_type != "sqlite":
             '''
@@ -202,6 +202,8 @@ class DB:
         TODO will curently combine dta from multiple anlayses => should retun analysis_id as well
         '''
 
+        print("add molis:", add_molis)
+
         res_filter_fastq = ''
         res_filter_sample = ''
         workflow_filter = ''
@@ -254,7 +256,17 @@ class DB:
             '''
 
         df = pandas.read_sql(sql, self.conn)
-        
+        if add_molis:
+            print("adding molis")
+            df_molis = self.get_fastq_and_sample_data(df["fastq_id"].to_list()).set_index("fastq_id")
+            print(df_molis.head())
+            df = df.set_index("fastq_id").join(df_molis, on="fastq_id", rsuffix='_other')
+            print("------------------")
+            print(df.head())
+            print("----------------------")
+            df = df[["molis_id", "name", "value", "run_name"]]
+            print(df.head())
+
         return df
 
 
