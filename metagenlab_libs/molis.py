@@ -75,5 +75,5 @@ class Molis():
 
 
 
-m = Molis()
-print(m.molis2patient_data("8601654775", num_bon=True))
+#m = Molis()
+#print(m.molis2patient_data("8601654775", num_bon=True))
