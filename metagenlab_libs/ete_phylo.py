@@ -89,7 +89,6 @@ class Column:
         self.header = header
         self.header_params = header_params
         self.face_params = face_params
-        self.face_params = None
 
     def get_header(self):
         if self.header == None:
@@ -120,14 +119,15 @@ class Column:
         text_face.border.width = 3
         text_face.border.color = "#ffffff"
         text_face.fsize = 7
-        if not self.face_params is None:
+        if not self.face_params is None and False:
             for name, value in self.face_params.items():
                 setattr(text_face, name, value)
 
 
 class SimpleColorColumn(Column):
-    def __init__(self, values, header=None, use_col=True):
-        super().__init__(header)
+    def __init__(self, values, header=None, use_col=True,
+            face_params=None, header_params=None):
+        super().__init__(header, face_params, header_params)
         self.values = values
         self.header = header
         self.use_col = use_col
@@ -142,11 +142,17 @@ class SimpleColorColumn(Column):
     def get_face(self, index):
         index = int(index)
         val = self.values.get(index, 0)
-        text_face = TextFace(val)
 
+        italic = "normal"
+        if not self.face_params is None:
+            if self.face_params.get("italic", False):
+                italic = "italic"
+
+        text_face = TextFace(val, fstyle=italic)
         # to recode
         if self.use_col and val != 0 and index in self.values:
             text_face.inner_background.color = EteTree.BLUE
+
         self.set_default_params(text_face)
         return text_face
 

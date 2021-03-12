@@ -1479,12 +1479,12 @@ class DB:
         return results[0][0]
 
 
-    def get_genes_from_og(self, orthogroups, bioentries=None, terms=["gene", "product"]):
+    def get_genes_from_og(self, orthogroups, taxon_ids=None, terms=["gene", "product"]):
         for term in terms:
             if term not in ["length", "gene", "product", "locus_tag"]:
                 raise RuntimeError(f"Term not supported: {term}")
 
-        og_entries = self.gen_placeholder_string(orthogroups) # ",".join("?" for og in orthogroups)
+        og_entries = self.gen_placeholder_string(orthogroups)
         query_args = orthogroups
 
         db_terms = [t for t in terms if t!="length"]
@@ -1492,11 +1492,14 @@ class DB:
             db_terms.append("translation")
         sel_terms = ",".join("\"" + f"{i}" + "\"" for i in db_terms)
         join, sel = "", ""
-        if bioentries != None:
-            bioentry_entries = ",".join("?" for entry in bioentries)
-            join = "INNER JOIN seqfeature AS seq ON og.seqid=seq.seqfeature_id "
-            sel = f"AND seq.bioentry_id IN ({bioentry_entries})"
-            query_args = orthogroups+bioentries
+        if taxon_ids != None:
+            taxon_id_query = self.gen_placeholder_string(taxon_ids)
+            join = (
+                "INNER JOIN seqfeature AS seq ON og.seqid=seq.seqfeature_id "
+                "INNER JOIN bioentry AS entry ON seq.bioentry_id=entry.bioentry_id "
+            )
+            sel = f"AND entry.taxon_id IN ({taxon_id_query})"
+            query_args = orthogroups+taxon_ids
         
         query = (
             f"SELECT feature.seqfeature_id, og.orthogroup, t.name, "
