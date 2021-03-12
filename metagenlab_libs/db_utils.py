@@ -1452,12 +1452,17 @@ class DB:
             f"GROUP BY entry.taxon_id, orthogroup;"
         )
         results = self.server.adaptor.execute_and_fetchall(query, lookup_terms)
-        df = DB.to_pandas_frame(results, [search_on, "orthogroup", "count"])
+
+        if search_on=="taxid" or search_on=="orthogroup":
+            df = DB.to_pandas_frame(results, ["taxid", "orthogroup", "count"])
+        else:
+            df = DB.to_pandas_frame(results, ["seqid", "orthogroup", "count"])
+
         if len(df.index) == 0:
             return df
 
         if search_on=="taxid" or search_on=="orthogroup":
-            df = df.set_index([search_on, "orthogroup"]).unstack(level=0, fill_value=0)
+            df = df.set_index(["taxid", "orthogroup"]).unstack(level=0, fill_value=0)
             df.columns = [col for col in df["count"].columns.values]
         elif search_on=="seqid":
             df = df[[indexing, "orthogroup"]]
