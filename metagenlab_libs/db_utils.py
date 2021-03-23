@@ -1435,16 +1435,20 @@ class DB:
         If the flag is set, MultiIndex(taxid, is_plasmid). If it is not set Index(taxid)
         """
 
+        sel = "entry.taxon_id"
         if search_on=="taxid":
             where_clause = "entry.taxon_id"
         elif search_on=="orthogroup":
             where_clause = "og.orthogroup"
+        elif search_on=="seqid":
+            where_clause = "feature.seqfeature_id"
+            sel = where_clause
         else:
             raise RuntimeError(f"Unsupported search {search_on}, must use orthogroup, bioentry or seqid")
 
         entries = ",".join("?" for i in lookup_terms)
         query = (
-            f"SELECT entry.taxon_id, orthogroup, count(*) "
+            f"SELECT {sel}, orthogroup, count(*) "
             "FROM bioentry AS entry "
             "INNER JOIN seqfeature AS feature ON entry.bioentry_id = feature.bioentry_id " 
             "INNER JOIN og_hits AS og ON og.seqid = feature.seqfeature_id "
@@ -1465,8 +1469,7 @@ class DB:
             df = df.set_index(["taxid", "orthogroup"]).unstack(level=0, fill_value=0)
             df.columns = [col for col in df["count"].columns.values]
         elif search_on=="seqid":
-            df = df[[indexing, "orthogroup"]]
-            df = df.set_index([indexing])
+            df = df[["seqid", "orthogroup"]].set_index(["seqid"])
         return df
 
 
@@ -1529,25 +1532,21 @@ class DB:
         return df
 
 
-    # NOTE: should be modified as selecting the cog with the best value is not
-    # necessary anymore
-    # For now, only returns the best hits, may be interesting to modify it later
-    # to return the count for all hits or to use a threshold.
-    def get_cog_counts_per_category(self, bioentries):
-        entries = ",".join(["?"] * len(bioentries))
+    def get_cog_counts_per_category(self, taxon_ids):
+        entries = self.gen_placeholder_string(taxon_ids)
         query = (
-            "SELECT bioentry_id, cog.function, MIN(hit.evalue) "
-            "FROM seqfeature "
-            "INNER JOIN sequence_hash_dictionnary AS hsh on hsh.seqid = seqfeature_id "
+            "SELECT entry.taxon_id, cog.function "
+            "FROM seqfeature AS feature "
+            "INNER JOIN bioentry AS entry ON feature.bioentry_id=entry.bioentry_id "
+            "INNER JOIN sequence_hash_dictionnary AS hsh on hsh.seqid = feature.seqfeature_id "
             "INNER JOIN cog_hits AS hit ON hit.hsh = hsh.hsh "
             "INNER JOIN cog_names AS cog ON cog.cog_id = hit.cog_id "
-            f"WHERE bioentry_id IN ({entries}) "
-            "GROUP BY bioentry_id, seqfeature_id;"
+            f"WHERE entry.taxon_id IN ({entries});"
         )
-        results = self.server.adaptor.execute_and_fetchall(query, bioentries)
+        results = self.server.adaptor.execute_and_fetchall(query, taxon_ids)
         hsh_results = {}
         for line in results:
-            entry_id, func, foo = line[0:3]
+            entry_id, func = line
             if entry_id not in hsh_results:
                 hsh_results[entry_id] = {func : 1}
             else:
@@ -1586,7 +1585,7 @@ class DB:
     #   seqid2 cog2
     #   seqid3 cog3
     def get_cog_hits(self, ids, indexing="bioentry", search_on="bioentry"):
-        entries = ",".join("?" for i in ids)
+        entries = self.gen_placeholder_string(ids)
 
         if search_on=="bioentry":
             where_clause = f" entry.bioentry_id IN ({entries}) "
@@ -1594,6 +1593,8 @@ class DB:
             where_clause = f" hsh.seqid IN ({entries}) "
         elif search_on=="cog":
             where_clause = f" cogs.cog_id IN ({entries}) "
+        elif search_on=="taxid":
+            where_clause = f" entry.taxon_id IN ({entries}) "
         else:
             raise RuntimeError(f"Searching on {search_on} is not supported")
 
@@ -1601,7 +1602,7 @@ class DB:
             index = "seqid.seqfeature_id"
         elif indexing=="bioentry":
             index = "entry.bioentry_id"
-        elif indexing=="taxon_id":
+        elif indexing=="taxid":
             index = "entry.taxon_id"
         else:
             raise RuntimeError(f"Indexing method not supported: {indexing}")
@@ -1616,7 +1617,7 @@ class DB:
             f"GROUP BY {index}, cogs.cog_id;"
         )
         results = self.server.adaptor.execute_and_fetchall(query, ids)
-        if indexing=="taxon_id" or indexing=="bioentry":
+        if indexing=="taxid" or indexing=="bioentry":
             column_names = [indexing, "cog", "count"]
             df = DB.to_pandas_frame(results, column_names)
             df = df.set_index([indexing, "cog"]).unstack(level=0, fill_value=0)
