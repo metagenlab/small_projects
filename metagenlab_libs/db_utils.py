@@ -58,6 +58,7 @@ class DB:
         )
         return self.server.adaptor.execute_and_fetchall(sql,)[0][0]
 
+
     def get_taxid_from_seqid(self, seqids):
         query = ",".join("?" for _ in seqids)
         sql = (
@@ -422,21 +423,6 @@ class DB:
         return [(line[0], line[1]) for line in results]
 
 
-    def get_ko_total_count(self, ko_ids):
-        entries = ",".join("?" for i in ko_ids)
-        query = (
-            "SELECT ko_hits.ko_id, seq.bioentry_id "
-            "FROM ko_hits AS ko_hits "
-            "INNER JOIN sequence_hash_dictionnary AS hsh ON hsh.hsh = ko_hits.hsh "
-            "INNER JOIN seqfeature AS seq ON seq.seqfeature_id = hsh.seqid "
-            f"WHERE ko_hits.ko_id IN ({entries})"
-            "GROUP BY ko_hits.ko_id, seq.bioentry_id;"
-        )
-        results = self.server.adaptor.execute_and_fetchall(query, ko_ids)
-        df = DB.to_pandas_frame(results, ["KO", "bioentry"])
-        return df.groupby("KO").count()
-
-
     def get_module_categories(self, module_ids=None):
         if module_ids!=None:
             selection_str = ",".join(str(mod_id) for mod_id in module_ids)
@@ -687,27 +673,35 @@ class DB:
         return df
 
 
-    def get_ko_count(self, bioentries, keep_seqids=False):
+    def get_ko_count(self, search_entries, keep_seqids=False, search_on="taxid"):
+        if search_on=="ko_id":
+            where_clause = "hit.ko_id"
+        elif search_on=="taxid":
+            where_clause = "entry.taxon_id"
+        else:
+            raise RuntimeError(f"Searching on {search_on} not supported, must be taxid or ko_id")
+
         if keep_seqids:
             keep_sel = " hsh.seqid, "
             keep_grp = " , hsh.seqid"
-            ids = ["bioentry", "KO", "seqid", "count"]
+            ids = ["taxid", "KO", "seqid", "count"]
         else:
             keep_sel = ""
             keep_grp = ""
-            ids = ["bioentry", "KO", "count"]
+            ids = ["taxid", "KO", "count"]
 
-        entries = ",".join("?" for i in bioentries)
+        entries = self.gen_placeholder_string(search_entries)
         query = (
-            f"SELECT feature.bioentry_id, hit.ko_id, {keep_sel} count(*) "
+            f"SELECT entry.taxon_id, hit.ko_id, {keep_sel} count(*) "
             "FROM seqfeature AS feature "
             "INNER JOIN sequence_hash_dictionnary AS hsh ON feature.seqfeature_id = hsh.seqid "
             "INNER JOIN ko_hits AS hit ON hit.hsh = hsh.hsh "
-            f"WHERE feature.bioentry_id IN ({entries})"
-            f"GROUP BY feature.bioentry_id, hit.ko_id {keep_grp};"
+            "INNER JOIN bioentry AS entry ON entry.bioentry_id=feature.bioentry_id "
+            f"WHERE {where_clause} IN ({entries})"
+            f"GROUP BY entry.taxon_id, hit.ko_id {keep_grp};"
         )
-        results = self.server.adaptor.execute_and_fetchall(query, bioentries)
-        return DB.to_pandas_frame(results, ids)
+        results = self.server.adaptor.execute_and_fetchall(query, search_entries)
+        return DB.to_pandas_frame(results, ids).set_index(["taxid", "KO"])
 
 
     def get_seqids_for_ko(self, ko_ids, only_seqids=False):
