@@ -636,6 +636,8 @@ class DB:
             search_term = "seqid.seqfeature_id"
         elif search_on=="taxon_id":
             search_term = "entry.taxon_id"
+        elif search_on == "ko":
+            search_term = "hit.ko_id"
         else:
             raise RuntimeError(f"Searching on {search_on} not supported")
 
@@ -673,7 +675,7 @@ class DB:
         return df
 
 
-    def get_ko_count(self, search_entries, keep_seqids=False, search_on="taxid"):
+    def get_ko_count(self, search_entries, keep_seqids=False, search_on="taxid", as_multi=True):
         if search_on=="ko_id":
             where_clause = "hit.ko_id"
         elif search_on=="taxid":
@@ -701,6 +703,8 @@ class DB:
             f"GROUP BY entry.taxon_id, hit.ko_id {keep_grp};"
         )
         results = self.server.adaptor.execute_and_fetchall(query, search_entries)
+        if not as_multi:
+            return DB.to_pandas_frame(results, ids)
         return DB.to_pandas_frame(results, ids).set_index(["taxid", "KO"])
 
 
@@ -1447,7 +1451,7 @@ class DB:
             "INNER JOIN seqfeature AS feature ON entry.bioentry_id = feature.bioentry_id " 
             "INNER JOIN og_hits AS og ON og.seqid = feature.seqfeature_id "
             f"WHERE {where_clause} IN ({entries}) "
-            f"GROUP BY entry.taxon_id, orthogroup;"
+            f"GROUP BY {sel}, orthogroup;"
         )
         results = self.server.adaptor.execute_and_fetchall(query, lookup_terms)
 
@@ -1546,23 +1550,6 @@ class DB:
             else:
                 cnt = hsh_results[entry_id].get(func, 0)
                 hsh_results[entry_id][func] = cnt+1
-        return hsh_results
-
-
-    def get_og(self, seqids, order=True):
-        entries = ",".join("?" for i in seqids)
-        ordering = ""
-        if order:
-            ordering = "ORDER BY seqid ASC"
-        query = (
-            "SELECT seqid, orthogroup "
-            f"FROM og_hits WHERE seqid IN ({entries})"
-            f"{ordering};"
-        )
-        results = self.server.adaptor.execute_and_fetchall(query, seqids)
-        hsh_results = {}
-        for line in results:
-            hsh_results[line[0]] = line[1]
         return hsh_results
 
 
