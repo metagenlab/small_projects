@@ -221,8 +221,8 @@ class DB:
             res_filter_sample += f' and t2.name in ("{term_filter}")\n' 
         if fastq_filter:
             fastq_filter_str = ','.join([str(i) for i in fastq_filter])
-            res_filter_fastq += f' and fastq_id in ({fastq_filter_str})\n'
-            res_filter_sample += f' and fastq_id in ({fastq_filter_str})\n' 
+            res_filter_fastq += f' and t1.fastq_id in ({fastq_filter_str})\n'
+            res_filter_sample += f' and t3.fastq_id in ({fastq_filter_str})\n' 
         if run_name_list:
             run_filter = '","'.join(run_name_list)
             res_filter_fastq += f' and run_name in ("{run_filter}")'
@@ -243,7 +243,7 @@ class DB:
             res_filter_fastq += f' and t6.workflow_id={workflow_id}'
         
         sql = f'''
-            select distinct fastq_id, t2.name,t1.value, run_name from GEN_fastqfilesmetadata t1 
+            select distinct t1.fastq_id, t2.name,t1.value, run_name from GEN_fastqfilesmetadata t1 
             inner join GEN_term t2 on t1.term_id=t2.id 
             inner join GEN_fastqfiles t3 on t1.fastq_id=t3.id 
             inner join GEN_runs t4 on t3.run_id=t4.id 
@@ -251,7 +251,7 @@ class DB:
             {workflow_filter}
             where t3.fastq_prefix not like "Undetermined%"
             {res_filter_fastq}
-            group by fastq_id, t2.name,t3.fastq_prefix,t4.run_date,t4.run_name,t4.read_length
+            group by t1.fastq_id, t2.name,t3.fastq_prefix,t4.run_date,t4.run_name,t4.read_length
             union 
             select distinct t3.fastq_id, t2.name,t1.value,run_name from GEN_samplemetadata t1 
             inner join GEN_term t2 on t1.term_id=t2.id 
