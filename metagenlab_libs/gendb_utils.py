@@ -3,6 +3,8 @@ from django.conf import settings
 from django.db import IntegrityError
 import os 
 import yaml 
+import networkx
+import numpy
 
 # setup django do be able to access django db models 
 import GEN_database.settings as GEN_settings
@@ -86,13 +88,18 @@ class DB:
 
     def get_fastq_metadata_v2(self, 
                               metric_name,
-                              fastq_id_list=False):
+                              fastq_id_list=False,
+                              analysis_id_list=False):
         fastq_filter = ''
         
         if fastq_id_list:
             fastq_filter_str = '","'.join([str(i) for i in fastq_id_list])
             fastq_filter += f'and fastq_id in ("{fastq_filter_str}") '
-        
+        if analysis_id_list:
+            filter_str = ','.join([str(i) for i in analysis_id_list])
+            fastq_filter += f' and analysis_id in ({filter_str})'
+        else:
+            analysis_filter = ''
         sql = f'''select analysis_id,fastq_id,value from  GEN_fastqfilesmetadata t1
                   inner join GEN_term t2 on t1.term_id=t2.id
                   where t2.name="{metric_name}" {fastq_filter}       
@@ -210,29 +217,30 @@ class DB:
         if term_list:
             print("term_list", term_list)
             term_filter = '","'.join(term_list)
-            res_filter_fastq += f'and t2.name in ("{term_filter}")\n' 
-            res_filter_sample += f'and t2.name in ("{term_filter}")\n' 
+            res_filter_fastq += f' and t2.name in ("{term_filter}")\n' 
+            res_filter_sample += f' and t2.name in ("{term_filter}")\n' 
         if fastq_filter:
             fastq_filter_str = ','.join([str(i) for i in fastq_filter])
-            res_filter_fastq += f'and fastq_id in ({fastq_filter_str})\n'
-            res_filter_sample += f'and fastq_id in ({fastq_filter_str})\n' 
+            res_filter_fastq += f' and fastq_id in ({fastq_filter_str})\n'
+            res_filter_sample += f' and fastq_id in ({fastq_filter_str})\n' 
         if run_name_list:
             run_filter = '","'.join(run_name_list)
-            res_filter_fastq += f'and run_name in ("{run_filter}")'
-            res_filter_sample += f'and run_name in ("{run_filter}")'
+            res_filter_fastq += f' and run_name in ("{run_filter}")'
+            res_filter_sample += f' and run_name in ("{run_filter}")'
         if metadata_value_list:
             metadata_filter = '","'.join(metadata_value_list)
-            res_filter_fastq += f'and t1.value in ("{metadata_filter}")'
-            res_filter_sample += f'and t1.value in ("{metadata_filter}")'
+            res_filter_fastq += f' and t1.value in ("{metadata_filter}")'
+            res_filter_sample += f' and t1.value in ("{metadata_filter}")'
         if analysis_id_list:
             metadata_filter = '","'.join(analysis_id_list)
-            res_filter_fastq += f'and t1.analysis_id in ("{metadata_filter}")'        
+            res_filter_fastq += f' and t1.analysis_id in ("{metadata_filter}")'
+            res_filter_sample += f' and t6.analysis_id in ("{metadata_filter}")'    
         if subproject_id_list:
             metadata_filter = '","'.join(subproject_id_list)
-            res_filter_fastq += f'and t5.subproject_id in ("{metadata_filter}")'  
+            res_filter_fastq += f' and t5.subproject_id in ("{metadata_filter}")'  
         if workflow_id:
             workflow_filter = 'inner join GEN_analysis t6 on t1.analysis_id=t6.id'
-            res_filter_fastq += f'and t6.workflow_id={workflow_id}'
+            res_filter_fastq += f' and t6.workflow_id={workflow_id}'
         
         sql = f'''
             select distinct fastq_id, t2.name,t1.value, run_name from GEN_fastqfilesmetadata t1 
@@ -250,17 +258,20 @@ class DB:
             inner join GEN_fastqtosample t3 on t1.sample_id=t3.sample_id
             inner join GEN_fastqfiles t4 on t3.fastq_id=t4.id 
             inner join GEN_runs t5 on t4.run_id=t5.id 
+            left join GEN_fastqset t6 on t3.fastq_id=t6.fastq_id
             where t4.fastq_prefix not like "Undetermined%"
             {res_filter_sample}
             group by t3.fastq_id, t2.name,t4.fastq_prefix,t5.run_date,t5.run_name,t5.read_length
             '''
+            
+        print(sql)
 
         df = pandas.read_sql(sql, self.conn)
         if add_molis:
             print("adding molis")
             df_molis = self.get_fastq_and_sample_data(df["fastq_id"].to_list()).set_index("fastq_id")
             print(df_molis.head())
-            df = df.set_index("fastq_id").join(df_molis, on="fastq_id", rsuffix='_other')
+            df = df.set_index("fastq_id").join(df_molis, on="fastq_id", rsuffix='_other', how="left")
             print("------------------")
             print(df.head())
             print("----------------------")
@@ -268,6 +279,273 @@ class DB:
             print(df.head())
 
         return df
+
+    def get_snp_matrix(self, analysis_id): 
+
+        sql = f'select fastq1_id, fastq2_id,n_diffs from GEN_snp_distance where analysis_id={analysis_id} union select fastq2_id as fastq1_id,fastq1_id as fastq2_id,n_diffs  from GEN_snp_distance where analysis_id={analysis_id}'
+        snp_long = pandas.read_sql(sql, self.conn)
+        snp_matrix = pandas.pivot(snp_long, index="fastq1_id", columns="fastq2_id", values="n_diffs").fillna(0)
+
+        return snp_matrix
+
+    def plot_phylogeny_from_parwise_snps(self, analysis_id, group_list):
+
+        # retrieve data 
+
+        snp_matrix = self.get_snp_matrix(analysis_id)
+
+        snp_matrix.to_csv("/media/IMU/GEN/PROJECTS/135_COVIDGEN_20_019/NOSOCOV/results/phylogeny_test_LIMS.csv", sep="\t")
+
+        # nj
+        from skbio import DistanceMatrix
+        from skbio.tree import nj
+        
+        print(snp_matrix.shape)
+        print()
+        dist_mat = snp_matrix.astype('int64').values.tolist()
+
+        dm = DistanceMatrix(dist_mat, [str(i) for i in snp_matrix.index])
+
+        newick_str = nj(dm, result_constructor=str)
+
+        from metagenlab_libs import ete_phylo
+        ete_tree = ete_phylo.EteTool(newick_str)
+
+        '''
+        # clustering 
+        from scipy.cluster import hierarchy
+
+        Z = hierarchy.linkage(snp_matrix, 'single')
+        tree = hierarchy.to_tree(Z,False)
+        
+        # convert to newick
+        from metagenlab_libs import ete_phylo
+
+        newick = ete_phylo.get_newick(tree, "", tree.dist, snp_matrix.index)
+        ete_tree = ete_phylo.EteTool(newick)
+        '''
+        # generate plot
+        ################
+
+        # retrieve metadata 
+        fastq_id2lineage = self.get_fastq_metadata("pangolin_lineage", index_str=True)
+        fastq_id2sample_date = self.get_fastq_metadata("sample_date", index_str=True)
+        fastq_id2first_name = self.get_fastq_metadata("first_name", index_str=True)
+        fastq_id2last_name = self.get_fastq_metadata("last_name", index_str=True)
+        fastq_id2IPP = self.get_fastq_metadata("patient_id", index_str=True)
+        fastq_id2unit = self.get_fastq_metadata("NOSOCOV_unit", index_str=True)
+        fastq_id2n_SNPs = self.get_fastq_metadata("freebayes_n_SNPs", index_str=True)
+        fastq_id2qc_status = self.get_fastq_metadata("qc_status", index_str=True)
+        
+        fastq_id2name = {str(i):f"{fastq_id2first_name[str(i)][0]}. {fastq_id2last_name[str(i)]}" for i in snp_matrix.index}
+        # plot
+        taxon2new_taxon = {i:i for i in snp_matrix.index}
+
+        fastq_id2year = {i:fastq_id2sample_date[i].split("-")[0] for i in fastq_id2sample_date}
+        fastq_id2month = {i:fastq_id2sample_date[i].split("-")[1] for i in fastq_id2sample_date}
+
+        fastq_id2fastq_id = {i:i for i in fastq_id2sample_date}
+
+        ete_tree.add_text_face(fastq_id2IPP, 
+                            header_name="IPP",
+                            color_scale=False)
+
+        ete_tree.add_text_face(fastq_id2fastq_id, 
+                            header_name="fastq_id",
+                            color_scale=False)
+
+        ete_tree.add_text_face(fastq_id2qc_status, 
+                            header_name="QC",
+                            color_scale=True)
+
+        ete_tree.add_text_face(fastq_id2lineage, 
+                            header_name="lineage",
+                            color_scale=True)
+
+        ete_tree.add_text_face(fastq_id2n_SNPs, 
+                            header_name="SNPs",
+                            color_scale=False)
+
+        ete_tree.add_text_face(fastq_id2unit, 
+                            header_name="unit",
+                            color_scale=True)
+
+        ete_tree.add_text_face(fastq_id2sample_date, 
+                            header_name="date",
+                            color_scale=False)
+
+        ete_tree.add_text_face(fastq_id2year, 
+                            header_name="year",
+                            color_scale=True)
+
+        ete_tree.add_text_face(fastq_id2month, 
+                            header_name="month",
+                            color_scale=True)
+
+        '''
+        ete_tree.add_text_face(ipp2group, 
+                            header_name="cluster",
+                            color_scale=True)
+
+        ete_tree.add_text_face(ipp2group_1, 
+                            header_name="cluster1",
+                            color_scale=True)
+                            
+        ete_tree.add_text_face(ipp2group_3, 
+                            header_name="cluster2",
+                            color_scale=True)
+        '''
+
+        ete_tree.add_text_face(fastq_id2name, 
+                            header_name="patient",
+                            color_scale=False)
+        
+        # ADD GROUPING DATA
+        for group in group_list:
+            fastq_id2group = {}
+            group_data, group_label = group
+            for i, group in enumerate(group_data):
+                for member in group:
+                    fastq_id2group[str(member)] = i
+                    
+            # ADD TO PLOT
+            ete_tree.add_text_face(fastq_id2group, 
+                                   header_name=group_label,
+                                   color_scale=True)
+                 
+        ete_tree.rename_leaves(taxon2new_taxon,
+                               keep_original=False,
+                               add_face=False)
+        
+
+        print("plotting...")
+        ete_tree.remove_dots()
+
+        ete_tree.tree.render("/media/IMU/GEN/PROJECTS/135_COVIDGEN_20_019/NOSOCOV/results/phylogeny_test_LIMS.svg",tree_style=ete_tree.tss, w=183, units="mm")
+
+
+
+    def find_clusters(self, G, node_list):
+        print("search clusters in", type(G))
+        import itertools
+        
+        comb = itertools.combinations(node_list, 2)
+        groups = []
+        for i in comb:
+            if i[0] == i[1]:
+                continue
+            try:
+                print (G[i[0]][i[1]])
+            except:
+                no_match = True
+                for n, group in enumerate(groups):
+                    if i[0] in groups[n] and i[1] in groups[n]:
+                        no_match = False
+                    elif i[0] in groups[n] and i[1] not in groups[n]:
+                        groups[n].append(i[1])
+                        no_match = False
+                    elif i[1] in groups[n] and i[0] not in groups[n]:
+                        groups[n].append(i[0])
+                        no_match = False
+                if no_match:
+                    groups.append([i[0], i[1]])
+        return groups
+
+    def merge_group_nodes(self, G, groups, node_list):
+
+        node2merged_group_label = {}
+        for group in groups:
+            #print("one group", group)
+            median_dico = {}
+            for node in node_list:
+                if node in group:
+                    continue
+                data = []
+                for member in group:
+                    if node in node2merged_group_label:
+                        data.append(G[member][node2merged_group_label[node]]['weight'])
+                    else:
+                        data.append(G[member][node]['weight'])
+                m = numpy.median(data)
+                #print("adding median;", node)
+                median_dico[node] = m
+            mapping = {group[0]: '\n'.join([str(i) for i in group])}
+            for node in group:
+                node2merged_group_label[node] = '\n'.join([str(i) for i in group])
+            G = networkx.relabel_nodes(G, mapping)
+            for i in group[1:len(group)]:
+                G.remove_node(i)
+            #print("median_dico", median_dico)
+            for i in node_list:
+                #print("i, group", i, group, i in group)
+                if i in group:
+                    continue
+                else:
+                    med = median_dico[i]
+                    if i in node2merged_group_label:
+                        G['\n'.join([str(i) for i in group])][node2merged_group_label[i]]['weight'] = med
+                    else:
+                        G['\n'.join([str(i) for i in group])][i]['weight'] = med
+        return G
+
+    # this function is used to convert networkx to Cytoscape.js JSON format
+    # returns string of JSON
+    def convert2cytoscapeJSON(self, G):
+        # load all nodes into nodes array
+        final = {}
+        final["nodes"] = []
+        final["edges"] = []
+        for node in G.nodes():
+            nx = {}
+            nx["data"] = {}
+            nx["data"]["id"] = str(node)
+            nx["data"]["label"] = str(node)
+            final["nodes"].append(nx.copy())
+        #load all edges to edges array
+        for edge in G.edges(data=True):
+            print(edge)
+            nx = {}
+            nx["data"]={}
+            nx["data"]["id"]=str(edge[0])+str(edge[1])
+            nx["data"]["strength"] = edge[2]["weight"]
+            nx["data"]["source"]=str(edge[0])
+            nx["data"]["target"]=str(edge[1])
+            final["edges"].append(nx)
+        return final
+
+    def group_closely_related(self, G, group_list, cutoff):
+        '''
+        Input network 
+        Extract closely related samples
+        '''
+        groups_cutoff_1 = []
+        for group in group_list:
+            group_updated = group.copy()
+            group_label = '\n'.join([str(i) for i in group])
+            for alt in G[group_label]:
+                if G[group_label][alt]['weight'] <= cutoff:
+                    lst = str(alt).split("\n")
+                    group_updated = group_updated+lst
+            groups_cutoff_1.append(group_updated)
+        return groups_cutoff_1
+
+
+    def get_MS_tree(self, analysis_id):
+
+        #m = pandas.read_csv(dist_matrix, delimiter='\t', header=0, index_col=0)
+        dist_matrix_df = self.get_snp_matrix(analysis_id)
+
+        nodes = dist_matrix_df.index
+
+        G = networkx.from_pandas_adjacency(dist_matrix_df)  # networkx.from_numpy_matrix(A)
+
+        groups = self.find_clusters(G, nodes)
+
+        G = self.merge_group_nodes(G, groups, nodes)
+
+        T=networkx.minimum_spanning_tree(G)
+
+        return G, T, groups
 
 
     def get_fastq_metadata_list_v2(self, 
@@ -387,7 +665,7 @@ class DB:
     def get_fastq_and_sample_data(self, fastq_id_list):
         
         fastq_list_filter = '","'.join([str(i) for i in fastq_id_list])
-        
+
         # left join because some fastq won't have match in the sample table
         # possible problem: fastq prefix match with multiple samples from different species
         # in that case: remove species name
@@ -423,13 +701,27 @@ class DB:
 
         return term_name2data
 
-    def qc_score(self, fastq_id_list, config, analysis_id_list=False):
-        
-        metric2scoring = self.parse_CT_scoring_table(config["SCORING"])
+    def qc_score(self, 
+                 fastq_id_list, 
+                 config,
+                 workflow_id=False,
+                 analysis_id_list=False):
+
+        from GEN.models import Workflow
+
+        if workflow_id:
+            workflow_name = Workflow.objects.filter(id=workflow_id)[0].workflow_name
+        else:
+            # use base metrics if not workflow specified
+            workflow_name = 'BASE'
+
+        metric2scoring = self.parse_CT_scoring_table(config["WORKFLOW"][workflow_name]["SCORING_TABLE"])
 
         df = self.get_fastq_metadata_list(term_list=list(metric2scoring.keys()), 
                                           fastq_filter=fastq_id_list,
-                                          analysis_id_list=analysis_id_list)
+                                          analysis_id_list=analysis_id_list,
+                                          workflow_id=workflow_id)
+
         # fastq_id, t2.name,t1.value, run_name
         # default score to 0
         fastq_id2n_fail = {i:0 for i in df["fastq_id"].to_list()}
@@ -554,7 +846,7 @@ class DB:
     def compare_samples(self, 
                         fastq_id_1, 
                         fastq_id2,
-                        alt_freq_cutoff=90):
+                        alt_freq_cutoff=70):
         
         sql = f'select * from GEN_snps where fastq_id={fastq_id_1} and alt_percent>{alt_freq_cutoff}'
         df1 = pandas.read_sql(sql, self.conn)
@@ -577,6 +869,20 @@ class DB:
         n_union = len(union)
         n_diffs = n_unique_df1 +  n_unique_df2
         return [fastq_id_1, fastq_id2, n_union, n_shared, n_diffs, n_unique_df1, n_unique_df2]
+
+    def get_analysis_from_description(self, description):
+        sql = f'''select analysis_id from GEN_analysismetadata t1 inner join GEN_term t2 on t1.term_id=t2.id 
+                 where t2.name='description' and t1.value="{description}";'''
+                 
+        self.cursor.execute(sql,)
+        res = self.cursor.fetchall()
+        
+        if len(res) > 1:
+            raise(f"Multiple analyses matche the description: {description}")
+        elif len(res) == 0:
+            return None
+        else:
+            return res[0][0]
 
     def create_search_index(self,):
 
@@ -922,10 +1228,10 @@ class DB:
             term_id2term_name[term_id] = term.name
         return term_id2term_name
 
-    def fastq_mutation(self, aa_change_list, analysis_id):
+    def fastq_mutation(self, aa_change_list, analysis_id, min_alt_freq=70):
         
         change_filter = '","'.join(aa_change_list)
-        sql = f'select fastq_id,aa_change from GEN_snps where aa_change in ("{change_filter}") and analysis_id={analysis_id};'
+        sql = f'select fastq_id,aa_change from GEN_snps where aa_change in ("{change_filter}") and analysis_id={analysis_id} and alt_percent>{min_alt_freq};'
         df = pandas.read_sql(sql, self.conn)
         fastq2changes = {i:[] for i in df["fastq_id"].to_list()}
         for n, row in df.iterrows():
@@ -963,9 +1269,19 @@ class DB:
         return df
 
 
-    def fastq_snp_table(self, fastq_id, min_alt_freq=70):
+    def fastq_snp_table(self, 
+                        fastq_id, 
+                        min_alt_freq=70,
+                        analysis_id_list=False):
         
-        sql = f'select distinct fastq_id,reference,position,ref,alt,effect_id,gene,aa_position,aa_change,nucl_change,depth,ref_count,alt_count,alt_percent from GEN_snps where fastq_id={fastq_id} and alt_percent>{min_alt_freq};'
+        add_filter = ''
+        if analysis_id_list:
+            analysis_filter = ','.join([str(i) for i in analysis_id_list])
+            add_filter += f' and analysis_id in ({analysis_filter})'
+
+        sql = f'''select distinct fastq_id,reference,position,ref,alt,effect_id,gene,aa_position,aa_change,nucl_change,depth,ref_count,alt_count,alt_percent from GEN_snps 
+                  where fastq_id={fastq_id} 
+                  and alt_percent>{min_alt_freq} {add_filter};'''
 
         return pandas.read_sql(sql, self.conn)
 
@@ -1000,25 +1316,28 @@ class DB:
         self.conn.commit()
     
     
-    def fastq_qc_filter(self, analysis_id, value):
+    def fastq_qc_filter(self, analysis_id, value, fastq_id_list=False):
         
+        if fastq_id_list:
+            fastq_id_filter = ','.join([str(i) for i in fastq_id_list])
+            filter_str = f' and fastq_id in ({fastq_id_filter})'
+        else:
+            filter_str = ''
+                    
         sql = f'''select fastq_id from GEN_fastqfilesmetadata t1 
                  inner join GEN_term t2 on t1.term_id=t2.id 
-                 where t1.analysis_id={analysis_id} and t2.name="qc_status" and t1.value="{value}";
+                 where t1.analysis_id={analysis_id} and t2.name="qc_status" and t1.value="{value}" {filter_str};
         '''
-        print(sql)
         
         return [i[0] for i in self.cursor.execute(sql,)]
         
-    def format_snps(self, fastq_id_list):
+    def format_snps(self, fastq_id_list, alt_freq_cutoff=70):
         
         fastq_filter = ','.join([str(i) for i in fastq_id_list])
-        sql = f'select fastq_id,nucl_change, aa_change, gene from GEN_snps where fastq_id in ({fastq_filter})'
+        sql = f'select fastq_id,nucl_change, aa_change, gene from GEN_snps where fastq_id in ({fastq_filter}) and alt_percent>{alt_freq_cutoff}'
 
         df = pandas.read_sql(sql, self.conn).set_index("fastq_id")
-        
-        print("head", df.head())
-        
+
         fastq2data = {fastq_id: {} for fastq_id in df.index.unique()}
         
         for fastq_id in list(fastq2data.keys()):
@@ -1030,9 +1349,7 @@ class DB:
             
         return fastq2data   
         
-        
-        
-    
+
     def insert_or_get_fastq(self, 
                             fastq_prefix, 
                             run_id, 
@@ -1129,55 +1446,63 @@ class DB:
     def insert_molis_sample_metadata_from_xml(self, 
                                               df, 
                                               field_definition, 
-                                              molis_alias="Numéro alias", 
-                                              already_into_db="patient_sex"):
+                                              molis_alias="Numéro alias"):
         import datetime
-        samples_in_db = [] # set([str(i) for i in self.get_sample_metadata(already_into_db).keys()])
+
+        print("field_definition", field_definition)
         
         metadata_list = []
 
         molis2sample_list = self.get_molis_id2sample_id_list()
 
+        print("df shape", df.shape)
         for n, row in df.iterrows():
             alias = row[molis_alias]
+
+            print("alias", alias)
             try:
-                sample_list = molis2sample_list[int(alias)]
+                sample_list = molis2sample_list[str(alias)]
             except KeyError:
+                print(f"No samples for alias: {alias}")
                 continue
+            print("number of samples", len(sample_list))
+            for sample_id in sample_list:          
+                print(f"Sample {sample_id} (alias {alias})")
 
-            for sample_id in sample_list:
-                if str(sample_id) not in samples_in_db:               
-                    print(f"missing metadata: sample {sample_id} (alias {alias})")
+                for field in field_definition:
+                    # deal with incomplete tables
+                    if field_definition[field]["fields"][0] not in df.columns:
+                        print(f'field {field_definition[field]["fields"][0]} not in table')
+                        continue
 
-                    for field in field_definition:
-                        if field_definition[field]["type"] == 'simple':
-                            val = row[field_definition[field]["fields"][0]]
-                        elif field_definition[field]["type"] == 'date':
-                            val = row[field_definition[field]["fields"][0]]
-                            if val == '':
-                                continue 
-                            else:
-                                val = datetime.datetime.strptime(val, '%Y-%m-%d').strftime('%Y-%m-%d')
-                        elif field_definition[field]["type"] == 'split':
-                            index = field_definition[field]["fields"][2]
-                            delimiter = field_definition[field]["fields"][1]
-                            val = row[field_definition[field]["fields"][0]].split(delimiter)[index]
-                        elif field_definition[field]["type"] == 'concatenate':
-                            field_list = field_definition[field]["fields"]
-                            values = row[field_list].to_list()
-                            val = ''.join(values)
-                        elif field_definition[field]["type"] == 'age':
-                            date_a = datetime.datetime.strptime(row[field_definition[field]["fields"][0]], '%Y-%m-%d')
-                            date_b = datetime.datetime.strptime(row[field_definition[field]["fields"][1]], '%Y-%m-%d')
-                            val = self.calculate_age(date_a, date_b).strftime('%Y-%m-%d')
+                    if field_definition[field]["type"] == 'simple':
+                        val = row[field_definition[field]["fields"][0]]
+                    elif field_definition[field]["type"] == 'date':
+                        val = row[field_definition[field]["fields"][0]]
+                        if val == '':
+                            continue 
                         else:
-                            field_type = field_definition[field]["type"]
-                            print(f'Unknown type: {field_type}')
-                            raise IOError(f'Unknown type: {field_type}')
-                    
-                        # add value if not empty
-                        if val != '':
-                             metadata_list.append({'term_name':field, 'value': val, 'sample_id': sample_id})
+                            val = datetime.datetime.strptime(val, '%Y-%m-%d').strftime('%Y-%m-%d')
+                    elif field_definition[field]["type"] == 'split':
+                        index = field_definition[field]["fields"][2]
+                        delimiter = field_definition[field]["fields"][1]
+                        val = row[field_definition[field]["fields"][0]].split(delimiter)[index]
+                    elif field_definition[field]["type"] == 'concatenate':
+                        field_list = field_definition[field]["fields"]
+                        values = row[field_list].to_list()
+                        val = ''.join(values)
+                    elif field_definition[field]["type"] == 'age':
+                        date_a = datetime.datetime.strptime(row[field_definition[field]["fields"][0]], '%Y-%m-%d')
+                        date_b = datetime.datetime.strptime(row[field_definition[field]["fields"][1]], '%Y-%m-%d')
+                        val = self.calculate_age(date_a, date_b).strftime('%Y-%m-%d')
+                    else:
+                        field_type = field_definition[field]["type"]
+                        print(f'Unknown type: {field_type}')
+                        raise IOError(f'Unknown type: {field_type}')
+                    print({'term_name':field, 'value': val, 'sample_id': sample_id})
+                    # add value if not empty
+                    if val != '':
+                            metadata_list.append({'term_name':field, 'value': val, 'sample_id': sample_id})
 
         # insert data
         for metadata in metadata_list:
