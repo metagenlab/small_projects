@@ -263,8 +263,7 @@ class DB:
             {res_filter_sample}
             group by t3.fastq_id, t2.name,t4.fastq_prefix,t5.run_date,t5.run_name,t5.read_length
             '''
-            
-        print(sql)
+
 
         df = pandas.read_sql(sql, self.conn)
         if add_molis:
