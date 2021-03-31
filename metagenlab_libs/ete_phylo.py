@@ -43,6 +43,8 @@ class EteTool():
         except:
             pass
     
+        self.tree.ladderize()
+        
         self.tss = TreeStyle()
         self.tss.draw_guiding_lines = True
         self.tss.guiding_lines_color = "gray"
@@ -78,12 +80,12 @@ class EteTool():
                     label = '%s (%s)' % (taxon2new_taxon[lf.name], lf.name)
                 else:
                     label = 'n/a'
-            #print ("add_face", add_face)
-            #if add_face:
-            #    n = TextFace(label, fgcolor = "black", fsize = 12, fstyle = 'italic')
-            #    lf.add_face(n, 0)
+            print ("add_face", add_face)
+            if add_face:
+                n = TextFace(label, fgcolor = "black", fsize = 12, fstyle = 'italic')
+                lf.add_face(n, 0)
             lf.name = label
-            print(lf)
+            #print(lf)
     
     def add_heatmap(self, 
                     taxon2value, 
@@ -250,6 +252,19 @@ class EteTool():
          # todo
         pass
     
+    def remove_dots(self,):
+        
+        nstyle = NodeStyle()
+        nstyle["shape"] = "sphere"
+        nstyle["size"] = 0
+        nstyle["fgcolor"] = "darkred"
+
+
+        # Applies the same static style to all nodes in the tree. Note that,
+        # if "nstyle" is modified, changes will affect to all nodes
+        for n in self.tree.traverse():
+            n.set_style(nstyle)
+            
     def add_text_face(self,
                       taxon2text,
                       header_name,
@@ -545,3 +560,20 @@ class EteToolCompact():
         for i, lf in enumerate(self.tree.iter_leaves()):
             n = TextFace("")
             lf.add_face(n, 0)
+
+
+def get_newick(node, newick, parentdist, leaf_names):
+    '''
+    convert hierarchical clustering to newick format
+    '''
+    if node.is_leaf():
+        return "%s:%.2f%s" % (leaf_names[node.id], parentdist - node.dist, newick)
+    else:
+        if len(newick) > 0:
+            newick = "):%.2f%s" % (parentdist - node.dist, newick)
+        else:
+            newick = ");"
+        newick = get_newick(node.get_left(), newick, node.dist, leaf_names)
+        newick = get_newick(node.get_right(), ",%s" % (newick), node.dist, leaf_names)
+        newick = "(%s" % (newick)
+        return newick
