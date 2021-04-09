@@ -1075,7 +1075,7 @@ class DB:
         
         print(sql_template)
         #print(values_list)
-        self.cursor.execute(sql_template, values_list + values_list)
+        self.cursor.execute(sql_template, values_list)
         
         
         self.conn.commit()
