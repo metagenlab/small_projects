@@ -26,11 +26,11 @@ class DB:
     def __init__(self,):
         
         
-        db_type = GEN_settings.DB_DRIVER
+        self.db_type = GEN_settings.DB_DRIVER
 
         self.AIRFLOW_CONFIG =  yaml.safe_load(open(GEN_settings.AIRFLOW_CONF, 'r'))
 
-        if db_type != "sqlite":
+        if self.db_type != "sqlite":
             '''
             import MySQLdb
             sqlpsw = os.environ['SQLPSW']
