@@ -1080,7 +1080,7 @@ class DB:
         except IntegrityError as e:
             if 'UNIQUE' in str(e) or 'Duplicate' in str(e):
                 print(f'UNIQUE constraint failed for sample ID: {sample_xls_id} -- skipping row')
-                continue
+                return None
             else:
                 print(f"Problem with sample ID: {sample_xls_id}")
                 raise
