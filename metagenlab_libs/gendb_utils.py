@@ -1033,12 +1033,13 @@ class DB:
                       col_names,
                       values_list,
                       sample_xls_id):
-        
+        from MySQLdb._exceptions import ProgrammingError
         
 
         # INSERT into GEN_sample(xlsx_sample_ID,species_name,date_received,sample_name,sample_type,analysis_type,description,molis_id,myseq_passage,run_date,date_registered,date_sample_modification,user_creation_id,user_modification_id) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(GEN_sample.xlsx_sample_ID) DO UPDATE SET xlsx_sample_ID=?,species_name=?,date_received=?,sample_name=?,sample_type=?,analysis_type=?,description=?,molis_id=?,myseq_passage=?,run_date=?,date_registered=?,date_sample_modification=?,user_creation_id=?,user_modification_id=?;
         # [29, 'Staphylococcus aureus', False, nan, 'strain', 'research', nan, 1306182530, nan, False, '2020-09-02', '2020-09-02', 2, 2, 29, 'Staphylococcus aureus', False, nan, 'strain', 'research', nan, 1306182530, nan, False, '2020-09-02', '2020-09-02', 2, 2]            
         # update all columns in case of conflict with xlsx_sample_id
+        
         
         # NOTE: xlsx_sample_ID used as reference: if a row is updated in the xlsx table, the corresponding row is updated in the sql table
         print(GEN_settings.DB_DRIVER)
@@ -1064,12 +1065,22 @@ class DB:
             ON DUPLICATE KEY UPDATE %s;''' % (','.join(col_names),
                                             ','.join([f'{self.spl}']*len(col_names)),
                                             update_str_comb)
+            sql_template_first_row = '''
+            INSERT into GEN_sample(%s) values(%s)
+            ON DUPLICATE KEY UPDATE %s;''' % (','.join(col_names),
+                                            ','.join([f'{self.spl}']*len(col_names)),
+                                            update_str_comb)
+
         else:                                                        
             raise IOError(f"Unknown db driver: {GEN_settings.DB_DRIVER}")
         
         print(sql_template)
         #print(values_list)
-        self.cursor.execute(sql_template, values_list + values_list)
+        try:
+            self.cursor.execute(sql_template, values_list + values_list)
+        except MySQLdb._exceptions.ProgrammingError:
+            print("first_row!")
+            self.cursor.execute(sql_template_first_row, values_list + values_list)
         self.conn.commit()
 
         return self.get_sample_id(sample_xls_id)
@@ -1427,7 +1438,7 @@ class DB:
         return [i[0] for i in self.cursor.fetchall()]
         
 
-    def calculate_age(self, birth_date, prel_date):
+    def calculate_age(self, birth_date, prel_date, fraction_year=False):
         from dateutil.relativedelta import relativedelta
         rdelta = relativedelta(prel_date, birth_date)
         age_years = rdelta.years 
@@ -1435,9 +1446,15 @@ class DB:
             age_months = rdelta.months
             if age_months == 0:
                 age_weeks = rdelta.weeks
-                return f'{age_weeks} weeks'
+                if fraction_year:
+                    return round(age_weeks/52.1429, 2)
+                else:
+                    return f'{age_weeks} weeks'
             else:
-                return f'{age_months} months'
+                if fraction_year:
+                    return round(age_months/12, 2)
+                else:
+                    return f'{age_months} months'
         else:
             return age_years
 
