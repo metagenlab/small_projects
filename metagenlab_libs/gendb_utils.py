@@ -1036,7 +1036,8 @@ class DB:
     def insert_sample(self,
                       col_names,
                       values_list,
-                      sample_xls_id):
+                      sample_xls_id,
+                      update=False):
         from MySQLdb._exceptions import ProgrammingError
         
 
@@ -1060,33 +1061,24 @@ class DB:
         elif GEN_settings.DB_DRIVER == 'mysql':
             update_str = f'%s=%{self.spl}'
             update_str_comb = ','.join([update_str % colname for colname in col_names])
-            sql_template = '''
-            SET @NEW_AI = (SELECT MAX(`id`)+1 FROM `GEN_sample`);
-            SET @ALTER_SQL = CONCAT('ALTER TABLE `GEN_sample` AUTO_INCREMENT =', @NEW_AI);
-            PREPARE NEWSQL FROM @ALTER_SQL;
-            EXECUTE NEWSQL; 
-            INSERT into GEN_sample(%s) values(%s)
-            ON DUPLICATE KEY UPDATE %s;''' % (','.join(col_names),
-                                            ','.join([f'{self.spl}']*len(col_names)),
-                                            update_str_comb)
-            sql_template_first_row = '''
-            INSERT into GEN_sample(%s) values(%s)
-            ON DUPLICATE KEY UPDATE %s;''' % (','.join(col_names),
-                                            ','.join([f'{self.spl}']*len(col_names)),
-                                            update_str_comb)
+            if not update:
+                sql_template = '''
+                    INSERT into GEN_sample(%s) values(%s)
+                    ON DUPLICATE KEY UPDATE %s;''' % (','.join(col_names),
+                                                    ','.join([f'{self.spl}']*len(col_names)))
+            else:
+                sql_template = '''
+                UPDATE GEN_sample(%s) SET
+                %s where xlsx_sample_ID=%s;''' % (','.join(col_names),
+                                                  update_str_comb,
+                                                  sample_xls_id)
 
         else:                                                        
             raise IOError(f"Unknown db driver: {GEN_settings.DB_DRIVER}")
         
         print(sql_template)
         #print(values_list)
-        try:
-            self.cursor.execute(sql_template, values_list + values_list)
-            self.close_cursor()
-        except:
-            print("first_row!")
-            self.cursor.execute(sql_template_first_row, values_list + values_list)
-            self.close_cursor()
+        self.cursor.execute(sql_template, values_list + values_list)
         
         
         self.conn.commit()
