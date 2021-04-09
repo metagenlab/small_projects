@@ -1082,11 +1082,13 @@ class DB:
         #print(values_list)
         try:
             self.cursor.execute(sql_template, values_list + values_list)
+            self.close_cursor()
         except:
             print("first_row!")
             self.cursor.execute(sql_template_first_row, values_list + values_list)
+            self.close_cursor()
         
-        self.close_cursor()
+        
         self.conn.commit()
 
         return self.get_sample_id(sample_xls_id)
