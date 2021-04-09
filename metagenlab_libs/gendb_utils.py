@@ -60,6 +60,10 @@ class DB:
             # placeholder for sql querries (differ between sqlite and mysql)
             self.spl = '?'
 
+    def close_cursor(self,):
+        self.cursor.close() 
+        self.cursor = self.conn.cursor()    
+
 
     def get_fastq_metadata(self, 
                            metric_name, 
@@ -1040,7 +1044,7 @@ class DB:
         # [29, 'Staphylococcus aureus', False, nan, 'strain', 'research', nan, 1306182530, nan, False, '2020-09-02', '2020-09-02', 2, 2, 29, 'Staphylococcus aureus', False, nan, 'strain', 'research', nan, 1306182530, nan, False, '2020-09-02', '2020-09-02', 2, 2]            
         # update all columns in case of conflict with xlsx_sample_id
         
-        
+
         # NOTE: xlsx_sample_ID used as reference: if a row is updated in the xlsx table, the corresponding row is updated in the sql table
         print(GEN_settings.DB_DRIVER)
         if GEN_settings.DB_DRIVER == 'sqlite':
@@ -1078,9 +1082,11 @@ class DB:
         #print(values_list)
         try:
             self.cursor.execute(sql_template, values_list + values_list)
-        except MySQLdb._exceptions.ProgrammingError:
+        except:
             print("first_row!")
             self.cursor.execute(sql_template_first_row, values_list + values_list)
+        
+        self.close_cursor()
         self.conn.commit()
 
         return self.get_sample_id(sample_xls_id)
