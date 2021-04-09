@@ -1075,9 +1075,17 @@ class DB:
         
         print(sql_template)
         #print(values_list)
-        self.cursor.execute(sql_template, values_list)
-        
-        
+        try:
+            self.cursor.execute(sql_template, values_list)
+            except IntegrityError as e:
+                if 'UNIQUE' in str(e) or 'Duplicate' in str(e):
+                    print(f'UNIQUE constraint failed for sample ID: {sample_xls_id} -- skipping row')
+                    continue
+                else:
+                    print(f"Problem with sample ID: {sample_xls_id}")
+                    raise
+
+
         self.conn.commit()
 
         return self.get_sample_id(sample_xls_id)
