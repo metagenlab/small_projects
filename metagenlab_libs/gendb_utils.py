@@ -1065,9 +1065,8 @@ class DB:
                 sql_template = '''INSERT into GEN_sample(%s) values(%s);''' % (','.join(col_names),
                                                                                ','.join([f'{self.spl}']*len(col_names)))
             else:
-                sql_template = '''UPDATE GEN_sample(%s) SET
-                                 %s where xlsx_sample_ID=%s;''' % (','.join(col_names),
-                                                                   update_str_comb,
+                sql_template = '''UPDATE GEN_sample SET
+                                 %s where xlsx_sample_ID=%s;''' % (update_str_comb,
                                                                    sample_xls_id)
 
         else:                                                        
