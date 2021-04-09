@@ -1062,16 +1062,13 @@ class DB:
             update_str = f'%s=%{self.spl}'
             update_str_comb = ','.join([update_str % colname for colname in col_names])
             if not update:
-                sql_template = '''
-                    INSERT into GEN_sample(%s) values(%s)
-                    ON DUPLICATE KEY UPDATE %s;''' % (','.join(col_names),
-                                                    ','.join([f'{self.spl}']*len(col_names)))
+                sql_template = '''INSERT into GEN_sample(%s) values(%s);''' % (','.join(col_names),
+                                                                               ','.join([f'{self.spl}']*len(col_names)))
             else:
-                sql_template = '''
-                UPDATE GEN_sample(%s) SET
-                %s where xlsx_sample_ID=%s;''' % (','.join(col_names),
-                                                  update_str_comb,
-                                                  sample_xls_id)
+                sql_template = '''UPDATE GEN_sample(%s) SET
+                                 %s where xlsx_sample_ID=%s;''' % (','.join(col_names),
+                                                                   update_str_comb,
+                                                                   sample_xls_id)
 
         else:                                                        
             raise IOError(f"Unknown db driver: {GEN_settings.DB_DRIVER}")
