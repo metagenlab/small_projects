@@ -1418,7 +1418,7 @@ class DB:
         return df.set_index(["seqid"])
 
 
-    def get_og_count(self, lookup_terms, search_on="taxid", diff_plasmid=False):
+    def get_og_count(self, lookup_terms, search_on="taxid", diff_plasmid=False, keep_taxid=False):
         """
         This function returns a pandas dataframe containing the orthogroup
         count for a set of taxon_ids. The user can differentiate between the chromosome
@@ -1428,6 +1428,7 @@ class DB:
                 for chromosome and plasmids will be done separately.
         lookup_term: the terms that will be search. Either a list of taxids, of orthogroup or of seqids.
         search_on: can be either orthogroup, seqid or taxid. Specifies what lookup_term is.
+        keep_taxid: for queries using the seqid lookup term, also return the taxid in the results
 
         The index of the table depends on whether the diff_plasmid flag was set. 
         If the flag is set, MultiIndex(taxid, is_plasmid). If it is not set Index(taxid)
@@ -1446,7 +1447,7 @@ class DB:
 
         entries = ",".join("?" for i in lookup_terms)
         query = (
-            f"SELECT {sel}, orthogroup, count(*) "
+            f"SELECT entry.taxon_id, feature.seqfeature_id, orthogroup, count(*) "
             "FROM bioentry AS entry "
             "INNER JOIN seqfeature AS feature ON entry.bioentry_id = feature.bioentry_id " 
             "INNER JOIN og_hits AS og ON og.seqid = feature.seqfeature_id "
@@ -1455,11 +1456,19 @@ class DB:
         )
         results = self.server.adaptor.execute_and_fetchall(query, lookup_terms)
 
+        header = None
         if search_on=="taxid" or search_on=="orthogroup":
-            df = DB.to_pandas_frame(results, ["taxid", "orthogroup", "count"])
-        else:
-            df = DB.to_pandas_frame(results, ["seqid", "orthogroup", "count"])
+            header = ["taxid", "orthogroup", "count"]
+            results = ((taxid, og, count) for taxid, seqid, og, count in results)
+        elif search_on=="seqid":
+            header = ["seqid", "orthogroup"]
+            if keep_taxid:
+                header.append("taxid")
+                results = ((seqid, og, taxid) for taxid, seqid, og, _ in results)
+            else:
+                results = ((seqid, og) for taxid, seqid, og, _ in results)
 
+        df = DB.to_pandas_frame(results, header)
         if len(df.index) == 0:
             return df
 
@@ -1467,7 +1476,7 @@ class DB:
             df = df.set_index(["taxid", "orthogroup"]).unstack(level=0, fill_value=0)
             df.columns = [col for col in df["count"].columns.values]
         elif search_on=="seqid":
-            df = df[["seqid", "orthogroup"]].set_index(["seqid"])
+            df = df.set_index(["seqid"])
         return df
 
 
@@ -1565,7 +1574,7 @@ class DB:
     #   seqid1 cog1
     #   seqid2 cog2
     #   seqid3 cog3
-    def get_cog_hits(self, ids, indexing="bioentry", search_on="bioentry"):
+    def get_cog_hits(self, ids, indexing="bioentry", search_on="bioentry", keep_taxid=False):
         entries = self.gen_placeholder_string(ids)
 
         if search_on=="bioentry":
@@ -1581,6 +1590,8 @@ class DB:
 
         if indexing=="seqid":
             index = "seqid.seqfeature_id"
+            if keep_taxid:
+                index += ", entry.taxon_id "
         elif indexing=="bioentry":
             index = "entry.bioentry_id"
         elif indexing=="taxid":
@@ -1604,11 +1615,15 @@ class DB:
             df = df.set_index([indexing, "cog"]).unstack(level=0, fill_value=0)
             df.columns = [col for col in df["count"].columns.values]
         elif indexing=="seqid":
-            # Should be improved: count is not necessary when using only seqids
-            # and several joins are not necessary anymore.
-            df = DB.to_pandas_frame(results, [indexing, "cog", "count"])
-            df = df[[indexing, "cog"]]
-            df = df.set_index([indexing])
+            header = ["seqid", "cog"]
+            if keep_taxid:
+                header.append("taxid")
+                results = ((seqid, cog, taxid) for seqid, taxid, cog, count in results)
+            else:
+                results = ((seqid, cog) for seqid, cog, count in results)
+
+            df = DB.to_pandas_frame(results, header)
+            df = df.set_index(["seqid"])
         return df
 
 

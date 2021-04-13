@@ -13,6 +13,7 @@ def layout(node):
 class EteTree:
 
     DEFAULT_COLORS = ['#fc8d59', '#91bfdb', '#99d594', '#c51b7d', '#f1a340', '#999999']
+    RED = "#ff0000"
     BLUE = "#58ACFA"
     GREEN = "#99d594"
     ORANGE = "#fc8d59"
@@ -53,7 +54,7 @@ class EteTree:
 
     # May be a good idea to be able to give custom parameters to the node names
     def get_leaf_name(self, index):
-        label = self.leaves_name.get(int(index), self.default_val)
+        label = self.leaves_name.get(index, self.default_val)
         t = TextFace(label, fgcolor = "black", fsize = 7, fstyle = "italic")
         t.margin_right=10
         return t
@@ -62,13 +63,12 @@ class EteTree:
         self.default_val = default_val
         if not isinstance(hsh_names, dict):
             raise Exception("Expects dict type for hsh_names")
-
         self.leaves_name = hsh_names
 
     def render(self, destination, **kwargs):
         for leaf in self.tree.iter_leaves():
             if not self.leaves_name is None:
-                leaf.add_face(self.get_leaf_name(leaf.name), 0, "branch-right")
+                leaf.add_face(self.get_leaf_name(int(leaf.name)), 0, "branch-right")
 
             for col_no, column in enumerate(self.columns):
                 # Note: this assumes that only bioentries (integer)
@@ -126,11 +126,16 @@ class Column:
 
 class SimpleColorColumn(Column):
     def __init__(self, values, header=None, use_col=True,
-            face_params=None, header_params=None):
+            face_params=None, header_params=None, col_func=None):
         super().__init__(header, face_params, header_params)
         self.values = values
         self.header = header
         self.use_col = use_col
+        if face_params is None or "color" not in face_params:
+            self.col = EteTree.BLUE
+        else:
+            self.col = face_params["color"]
+        self.col_func = col_func
 
     def fromSeries(series, header=None, cls=None, **args):
         values = series.to_dict()
@@ -146,12 +151,15 @@ class SimpleColorColumn(Column):
         italic = "normal"
         if not self.face_params is None:
             if self.face_params.get("italic", False):
-                italic = "italic"
+                italic = "ITalic"
 
         text_face = TextFace(val, fstyle=italic)
         # to recode
         if self.use_col and val != 0 and index in self.values:
-            text_face.inner_background.color = EteTree.BLUE
+            if self.col_func is None:
+                text_face.inner_background.color = self.col
+            else:
+                text_face.inner_background.color = self.col_func(index)
 
         self.set_default_params(text_face)
         return text_face
@@ -166,8 +174,8 @@ class ModuleCompletenessColumn(Column):
     *  - missing KOs: orange
     """
     def __init__(self, values, header=None):
+        super().__init__(header)
         self.values = values
-        self.header = header
 
     def get_face(self, index):
         index = int(index)
