@@ -291,6 +291,172 @@ class DB:
 
         return snp_matrix
 
+
+
+    def plot_phylogeny_from_parwise_snps_with_context(self, analysis_id):
+
+        # retrieve data 
+
+        backup_folder = self.AIRFLOW_CONFIG["OUTPUT_FOLDER_BASE"]
+    
+    
+        # retrieve snp table and metadata table location 
+        pairsnp_filtered_path = os.path.join(backup_folder, self.get_analysis_metadata("pairsnp_filtered",analysis_id_list=[analysis_id])[analysis_id])
+        pairsnp_metadata_path = os.path.join(backup_folder, self.get_analysis_metadata("pairsnp_metadata",analysis_id_list=[analysis_id])[analysis_id])
+
+        print("path", pairsnp_filtered_path)
+        print("path", pairsnp_metadata_path)
+
+        pairsnp_filtered_df = pandas.read_csv(pairsnp_filtered_path, sep="\t", header=0)[["genome_1", "genome_2", "SNPs"]]
+        pairsnp_filtered_df_reverse = pandas.read_csv(pairsnp_filtered_path, sep="\t", header=0)[["genome_2", "genome_1", "SNPs"]]
+        pairsnp_filtered_df_reverse.columns = ["genome_1", "genome_2", "SNPs"]
+        pairsnp_filtered_df = pairsnp_filtered_df.append(pairsnp_filtered_df_reverse)
+        pairsnp_metadata_df = pandas.read_csv(pairsnp_metadata_path, sep="\t", header=0, index_col="strain")
+
+        print(pairsnp_filtered_df.head())
+
+        nr_set = set(pairsnp_filtered_df["genome_1"].to_list() + pairsnp_filtered_df["genome_2"].to_list())
+        
+        print("nr_set", len(nr_set))
+
+        df_self_comp = pandas.DataFrame([[i, i, 0] for i in nr_set], columns=["genome_1", "genome_2", "SNPs"])
+
+        pairsnp_filtered_df = pairsnp_filtered_df.append(df_self_comp)
+
+        print(pairsnp_filtered_df.tail())
+
+        snp_matrix = pandas.pivot(pairsnp_filtered_df, index="genome_1", columns="genome_2", values="SNPs").fillna(20)
+
+        snp_matrix.to_csv("/media/IMU/GEN/PROJECTS/156_NOSOCOV/Analysis/phylogeny_test_LIMS_with_context.csv", sep="\t")
+
+        cols = set(snp_matrix.columns)
+        rows = set(snp_matrix.index)
+
+        print("unique cols",len(cols),cols.difference(rows) )
+        print("unique rows",len(rows),rows.difference(cols) )
+
+        print("snp_matrix", snp_matrix.shape)
+        print(snp_matrix)
+
+        # nj
+        from skbio import DistanceMatrix
+        from skbio.tree import nj
+        
+        print(snp_matrix.shape)
+        print()
+        dist_mat = snp_matrix.astype('int64').values.tolist()
+
+        dm = DistanceMatrix(dist_mat, [str(i) for i in snp_matrix.index])
+
+        newick_str = nj(dm, result_constructor=str)
+
+        from metagenlab_libs import ete_phylo
+        ete_tree = ete_phylo.EteTool(newick_str)
+
+        '''
+        # clustering 
+        from scipy.cluster import hierarchy
+
+        Z = hierarchy.linkage(snp_matrix, 'single')
+        tree = hierarchy.to_tree(Z,False)
+        
+        # convert to newick
+        from metagenlab_libs import ete_phylo
+
+        newick = ete_phylo.get_newick(tree, "", tree.dist, snp_matrix.index)
+        ete_tree = ete_phylo.EteTool(newick)
+        '''
+        # generate plot
+        ################
+
+        # retrieve metadata 
+        fastq_id2lineage = pairsnp_metadata_df["pango_lineage"].to_dict()
+        
+        fastq_id2sample_date = pairsnp_metadata_df["date"].to_dict()
+        fastq_id2name = {key:value for key,value in pairsnp_metadata_df["patient_name"].to_dict().items() if not pandas.isna(value)}
+        fastq_id2IPP = {key:int(value) for key,value in pairsnp_metadata_df["ipp"].to_dict().items() if not pandas.isna(value)}
+        fastq_id2qc_status = {key:value for key,value in pairsnp_metadata_df["qc_status"].to_dict().items() if not pandas.isna(value)}
+        fastq_id2unit = {key:value for key,value in pairsnp_metadata_df["unit"].to_dict().items() if not pandas.isna(value)}
+        fastq_id2origin = {key:("CHUV" if value=='local' else "Switzerland") for key,value in pairsnp_metadata_df["origin"].to_dict().items()}
+        
+        # plot
+        taxon2new_taxon = {i:i for i in snp_matrix.index}
+
+        fastq_id2year = {i:fastq_id2sample_date[i].split("-")[0] for i in fastq_id2sample_date}
+        fastq_id2month = {i:fastq_id2sample_date[i].split("-")[1] for i in fastq_id2sample_date}
+
+        # 
+        fastq_id2week = {i:pandas.to_datetime(fastq_id2sample_date[i]).week for i in fastq_id2sample_date}
+
+        fastq_id2fastq_id = {i:i for i in fastq_id2sample_date}
+
+        ete_tree.add_text_face(fastq_id2origin, 
+                            header_name="Origin",
+                            color_scale=True)
+
+        ete_tree.add_text_face(fastq_id2IPP, 
+                            header_name="IPP",
+                            color_scale=False)
+
+        ete_tree.add_text_face(fastq_id2fastq_id, 
+                            header_name="fastq_id",
+                            color_scale=False)
+
+        ete_tree.add_text_face(fastq_id2qc_status, 
+                            header_name="QC",
+                            color_scale=True)
+
+        ete_tree.add_text_face(fastq_id2lineage, 
+                            header_name="lineage",
+                            color_scale=True)
+
+        ete_tree.add_text_face(fastq_id2unit, 
+                            header_name="unit",
+                            color_scale=True)
+
+        ete_tree.add_text_face(fastq_id2sample_date, 
+                            header_name="date",
+                            color_scale=False)
+
+        ete_tree.add_text_face(fastq_id2week, 
+                            header_name="week",
+                            color_scale=True)
+
+        #ete_tree.add_text_face(fastq_id2month, 
+        #                    header_name="month",
+        #                    color_scale=True)
+
+        ete_tree.add_text_face(fastq_id2name, 
+                            header_name="patient",
+                            color_scale=False)
+        
+        '''
+        # ADD GROUPING DATA
+        for group in group_list:
+            fastq_id2group = {}
+            group_data, group_label = group
+            for i, group in enumerate(group_data):
+                for member in group:
+                    fastq_id2group[str(member)] = i
+                    
+            # ADD TO PLOT
+            ete_tree.add_text_face(fastq_id2group, 
+                                   header_name=group_label,
+                                   color_scale=True)
+        '''
+
+        ete_tree.rename_leaves(taxon2new_taxon,
+                               keep_original=False,
+                               add_face=False)
+        
+
+        print("plotting...")
+        ete_tree.remove_dots()
+        os.environ['QT_QPA_PLATFORM']='offscreen'
+        ete_tree.tree.render("/media/IMU/GEN/PROJECTS/156_NOSOCOV/Analysis/phylogeny_test_LIMS_external.svg",tree_style=ete_tree.tss, w=183, units="mm")
+
+
+
     def plot_phylogeny_from_parwise_snps(self, analysis_id, group_list):
 
         # retrieve data 
@@ -682,11 +848,19 @@ class DB:
         return pandas.read_sql(sql, self.conn)
 
 
-    def get_analysis_metadata(self, term_name):
+    def get_analysis_metadata(self, term_name, analysis_id_list=False):
         
+
+        add_filter = ''
+        if analysis_id_list:
+            filter_str = ','.join([str(i) for i in analysis_id_list])
+            add_filter = f' and t1.analysis_id in ({filter_str})'
+
         sql = f"""select t1.analysis_id,value from GEN_analysismetadata t1 
                   inner join GEN_term t2 on t1.term_id =t2.id 
-                  where t2.name like '{term_name}';"""
+                  where t2.name like '{term_name}'
+                  {add_filter}
+                  """
         self.cursor.execute(sql,) 
         return {int(i[0]):i[1] for i in self.cursor.fetchall()}
 
@@ -718,7 +892,11 @@ class DB:
             # use base metrics if not workflow specified
             workflow_name = 'BASE'
 
+        print("workflow_name", workflow_name)
+
         metric2scoring = self.parse_CT_scoring_table(config["WORKFLOW"][workflow_name]["SCORING_TABLE"])
+
+        print("metric2scoring", metric2scoring)
 
         df = self.get_fastq_metadata_list(term_list=list(metric2scoring.keys()), 
                                           fastq_filter=fastq_id_list,
@@ -735,29 +913,44 @@ class DB:
             fastq_id = row["fastq_id"]
 
             if row["name"] in metric2scoring:
+                
                 # default green
                 LCL_failed = metric2scoring[row["name"]]["LCL_failed"]
                 UCL_failed = metric2scoring[row["name"]]["UCL_failed"]
                 LCL_warning = metric2scoring[row["name"]]["LCL_warning"]
                 UCL_warning = metric2scoring[row["name"]]["UCL_warning"]
+                
+                
+                
+                
+                
                 if LCL_failed:
                     if float(float(row["value"])) < float(LCL_failed):
+                        print(row["name"])
+                        print("LCL_failed", LCL_failed)
                         fastq_id2n_fail[fastq_id] += 1
                         fastq_id2metric2score[fastq_id][row["name"]] = 'FAIL'
                 if UCL_failed:
                     if float(float(row["value"])) > float(UCL_failed):
+                        print(row["name"])
+                        print("UCL_failed", UCL_failed)
                         fastq_id2n_fail[fastq_id] += 1
                         fastq_id2metric2score[fastq_id][row["name"]] = 'FAIL'
                 if row["name"] not in fastq_id2metric2score[fastq_id]:
                     if LCL_warning:
                         if float(float(row["value"])) < float(LCL_warning):
+                            #print("LCL_warning", LCL_warning)
                             fastq_id2n_warn[fastq_id] += 1
                             fastq_id2metric2score[fastq_id][row["name"]] = 'WARN'
                     if UCL_warning:
+                        
                         if float(float(row["value"])) > float(UCL_warning):
+                            #print("UCL_warning", UCL_warning)
                             fastq_id2n_warn[fastq_id] += 1
                             fastq_id2metric2score[fastq_id][row["name"]] = 'WARN' 
 
+        print("fastq_id2n_warn", fastq_id2n_warn)
+        print("fastq_id2n_fail", fastq_id2n_fail)
         return fastq_id2n_fail, fastq_id2n_warn, fastq_id2metric2score
 
     def get_run_name2run_id(self,):
@@ -1058,6 +1251,8 @@ class DB:
                             ON CONFLICT(GEN_sample.xlsx_sample_ID) DO UPDATE SET %s;''' % (','.join(col_names),
                                                                                            ','.join([f'{self.spl}']*len(col_names)),
                                                                                            update_str_comb)
+            self.cursor.execute(sql_template, values_list + values_list)
+            
         elif GEN_settings.DB_DRIVER == 'mysql':
             update_str = f'%s=%{self.spl}'
             update_str_comb = ','.join([update_str % colname for colname in col_names])
@@ -1068,21 +1263,22 @@ class DB:
                 sql_template = '''UPDATE GEN_sample SET
                                  %s where xlsx_sample_ID=%s;''' % (update_str_comb,
                                                                    sample_xls_id)
+            print(sql_template)
+            #print(values_list)
+            try:
+                self.cursor.execute(sql_template, values_list)
+            except IntegrityError as e:
+                if 'UNIQUE' in str(e) or 'Duplicate' in str(e):
+                    print(f'UNIQUE constraint failed for sample ID: {sample_xls_id} -- skipping row')
+                    return None
+                else:
+                    print(f"Problem with sample ID: {sample_xls_id}")
+                    raise                                                  
 
         else:                                                        
             raise IOError(f"Unknown db driver: {GEN_settings.DB_DRIVER}")
         
-        print(sql_template)
-        #print(values_list)
-        try:
-            self.cursor.execute(sql_template, values_list)
-        except IntegrityError as e:
-            if 'UNIQUE' in str(e) or 'Duplicate' in str(e):
-                print(f'UNIQUE constraint failed for sample ID: {sample_xls_id} -- skipping row')
-                return None
-            else:
-                print(f"Problem with sample ID: {sample_xls_id}")
-                raise
+
 
 
         self.conn.commit()
