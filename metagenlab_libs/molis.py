@@ -55,7 +55,7 @@ class Molis():
         data["DATE_NAISS"] = datetime.datetime.strptime(data["DATE_NAISS"], '%Y-%m-%d %H:%M:%S').strftime('%Y-%m-%d')
         
         # bon number should have 4 digits
-        data["MOLIS_ID"] = f'{data["LID"]}{data["LPERIOD"]}{data["ORDNB"].zfill(4)}'
+        data["MOLIS_ID"] = f'{data["LID"]}{data["LPERIOD"].zfill(4)}{data["ORDNB"].zfill(4)}'
 
         year = '20' + data["LID"]
         month = data["LPERIOD"][0:2]
