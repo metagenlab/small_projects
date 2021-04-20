@@ -1195,7 +1195,8 @@ class DB:
                 hsh_results[bioentry] = {func: 1}
         return hsh_results
 
-    def get_cog_summaries(self, cog_ids, only_cog_desc=False):
+
+    def get_cog_summaries(self, cog_ids, only_cog_desc=False, as_df=False):
         ids = ",".join(["?"] * len(cog_ids))
         query = (
             "SELECT cog_id, function, description "
@@ -1203,11 +1204,13 @@ class DB:
             f"WHERE cog_id IN ({ids});"
         )
         results = self.server.adaptor.execute_and_fetchall(query, cog_ids)
-        if only_cog_desc:
+        if only_cog_desc and not as_df:
             hsh_results = {}
             for line in results:
                 hsh_results[line[0]] = (line[1], line[2])
             return hsh_results
+        elif only_cog_desc:
+            return DB.to_pandas_frame(results, ["cog", "function", "description"])
 
         funcs = "SELECT function, description FROM cog_functions;"
         functions = self.server.adaptor.execute_and_fetchall(funcs)
@@ -1222,6 +1225,7 @@ class DB:
                 func = function[i]
                 func_descr = hsh_func_to_description[func]
                 hsh_results[cog_id].append((func, func_descr, cog_description))
+
         return hsh_results
 
 
