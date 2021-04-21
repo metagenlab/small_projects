@@ -1096,7 +1096,7 @@ class DB:
                                     inner join GEN_workflow t3 on t2.workflow_id=t3.id 
                                     inner join GEN_analysismetadata t4 on t1.analysis_id=t4.analysis_id
                                     inner join GEN_term t5 on t4.term_id=t5.id
-                                    where t5.name='description' and t1.analysis_id in ("{analysis_filter}") group by t1.analysis_id'''
+                                    where t5.name='description' and t1.analysis_id in ("{analysis_filter}") group by t1.analysis_id,t4.value,start_date,workflow_name'''
 
         analyses = pandas.read_sql(sql_analyse_metadata, self.conn)
 
