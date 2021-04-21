@@ -255,7 +255,6 @@ class DB:
             {workflow_filter}
             where t3.fastq_prefix not like "Undetermined%"
             {res_filter_fastq}
-            group by t1.fastq_id, t2.name,t3.fastq_prefix,t4.run_date,t4.run_name,t4.read_length
             union 
             select distinct t3.fastq_id, t2.name,t1.value,run_name from GEN_samplemetadata t1 
             inner join GEN_term t2 on t1.term_id=t2.id 
@@ -265,7 +264,6 @@ class DB:
             left join GEN_fastqset t6 on t3.fastq_id=t6.fastq_id
             where t4.fastq_prefix not like "Undetermined%"
             {res_filter_sample}
-            group by t3.fastq_id, t2.name,t4.fastq_prefix,t5.run_date,t5.run_name,t5.read_length
             '''
 
 
