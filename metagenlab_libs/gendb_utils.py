@@ -1271,7 +1271,10 @@ class DB:
                     return None
                 else:
                     print(f"Problem with sample ID: {sample_xls_id}")
-                    raise                                                  
+                    raise
+            else:
+                print("Unknown error")
+                raise                                                  
 
         else:                                                        
             raise IOError(f"Unknown db driver: {GEN_settings.DB_DRIVER}")
@@ -1614,14 +1617,21 @@ class DB:
         else:
             return {int(i[0]):i[1] for i in self.cursor.fetchall()}
 
-    def get_sample_table(self,):
+    def get_sample_table(self, suproject_id_list=False):
         
-        sql = '''
+
+        project_filter = ''
+        if suproject_id_list:
+
+            project_filter = 'where t3.subproject_id in (%s)' % ','.join([str(i) for i in suproject_id_list])
+
+        sql = f'''
         select distinct A.id,A.sample_type,A.sample_name,A.taxonomy,A.date_registered, A.date_received,A.n_fastq, count(t3.subproject_id ) as n_projects from (
         select distinct t1.id,t1.sample_type,t1.sample_name,t1.taxonomy,t1.date_registered, t1.date_received, count(t2.fastq_id) as n_fastq from GEN_sample t1 
         left join GEN_fastqtosample t2 on t1.id=t2.sample_id 
         group by t1.id) A  
         left join GEN_subprojectsample t3 on A.id=t3.sample_id
+        {project_filter}
         group by A.id 
         '''
         self.cursor.execute(sql,) 
