@@ -95,10 +95,11 @@ class DB:
                               fastq_id_list=False,
                               analysis_id_list=False):
         fastq_filter = ''
-        
+        sample_filter = ''
         if fastq_id_list:
             fastq_filter_str = '","'.join([str(i) for i in fastq_id_list])
             fastq_filter += f'and fastq_id in ("{fastq_filter_str}") '
+            sample_filter += f'and fastq_id in ("{fastq_filter_str}") '
         if analysis_id_list:
             filter_str = ','.join([str(i) for i in analysis_id_list])
             fastq_filter += f' and analysis_id in ({filter_str})'
@@ -111,7 +112,7 @@ class DB:
                   select NULL as analysis_id, t3.fastq_id,t1.value from  GEN_samplemetadata t1
                   inner join GEN_term t2 on t1.term_id=t2.id
                   inner join GEN_fastqtosample t3 on t1.sample_id=t3.sample_id
-                  where t2.name="{metric_name}" {fastq_filter}
+                  where t2.name="{metric_name}" {sample_filter}
                   '''
         print(sql)
         return pandas.read_sql(sql, self.conn)
