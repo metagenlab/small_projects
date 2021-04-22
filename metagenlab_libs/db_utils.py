@@ -627,51 +627,59 @@ class DB:
     #    it may be possible to factor out the redundant code
     #  - when querying for seqids, two many joins are being performed
     #    it may be worth it to simplify this
-    def get_ko_hits(self, ids, indexing="bioentry", search_on="bioentry", keep_taxid=False):
-        prot_query = ",".join("?" for i in ids)
+    def get_ko_hits(self, ids, search_on="taxid", keep_taxid=False):
+        """
+        Note: if search_on = ko, only the seqid are returned by default, if the keep_taxids
+        is set, taxid are returned in an additional column.
+        """
 
-        if search_on=="bioentry":
-            search_term = "entry.bioentry_id"
-        elif search_on=="seqid":
+        prot_query = self.gen_placeholder_string(ids)
+
+        header      = None
+        select      = "SELECT seqid.seqfeature_id, hit.ko_id "
+        group_by    = ""
+        search_term = ""
+        if search_on == "seqid":
             search_term = "seqid.seqfeature_id"
-        elif search_on=="taxon_id":
+            header      = ["seqid", "ko"]
+        elif search_on == "taxid":
+            select      = "SELECT entry.taxon_id, hit.ko_id, COUNT(*) "
             search_term = "entry.taxon_id"
+            group_by    = "GROUP BY entry.taxon_id, hit.ko_id "
+            header      = ["taxid", "ko", "count"]
         elif search_on == "ko":
             search_term = "hit.ko_id"
+            header      = ["seqid", "ko"]
         else:
             raise RuntimeError(f"Searching on {search_on} not supported")
 
-        if indexing=="seqid":
-            index = "seqid.seqfeature_id"
-        elif indexing=="bioentry":
-            index = "entry.bioentry_id"
-        elif indexing=="taxon_id":
-            index = "entry.taxon_id"
-        else:
-            raise RuntimeError(f"Index {indexing} not supported")
+        if keep_taxid and not search_on=="taxid":
+            select += ", entry.taxon_id "
+            header.append("taxid")
+        elif keep_taxid:
+            raise RuntimeError(("Are you mocking me? Taxid is already returned! "
+                "Please remove this pesky keep_taxid flag or use another search term!"))
 
         query = (
-            f"SELECT {index}, hit.ko_id, COUNT(*) "
+            f"{select}"
             "FROM bioentry AS entry "
             "INNER JOIN seqfeature AS seqid ON seqid.bioentry_id=entry.bioentry_id "
             "INNER JOIN sequence_hash_dictionnary AS hsh ON hsh.seqid = seqid.seqfeature_id "
             "INNER JOIN ko_hits AS hit ON hit.hsh=hsh.hsh "
             f"WHERE {search_term} IN ({prot_query}) "
-            f"GROUP BY {index}, hit.ko_id;"
+            f"{group_by};"
         )
         results = self.server.adaptor.execute_and_fetchall(query, ids)
-        df = DB.to_pandas_frame(results, [indexing, "ko", "count"])
-        column_names = [indexing, "ko", "count"]
-        df = DB.to_pandas_frame(results, column_names)
+
+        df = DB.to_pandas_frame(results, header)
         if df.empty:
             return df
 
-        if indexing=="taxon_id" or indexing=="bioentry":
-            df = df.set_index([indexing, "ko"]).unstack(level=0, fill_value=0)
+        if search_term=="taxid":
+            df = df.set_index(["taxid", "ko"]).unstack(level=0, fill_value=0)
             df.columns = [col for col in df["count"].column.values]
-        elif indexing=="seqid":
-            df = df[[indexing, "ko"]]
-            df = df.set_index([indexing])
+        elif search_term=="seqid" or search_term=="ko":
+            df = df.set_index(["seqid"])
         return df
 
 
