@@ -789,13 +789,32 @@ class DB:
             print(df.head())
         return df
 
-    def get_xslx_id2fastq_id(self,):
-        
+    def get_xslx_id2fastq_id_list(self,):
+        '''
+        TODO: deal with samples with multiple fastq ids 
+        '''
         sql = '''select t2.xlsx_sample_ID,t1.fastq_id from GEN_fastqtosample t1 
                 inner join GEN_sample t2 on t1.sample_id=t2.id '''
         self.cursor.execute(sql,) 
-        return {int(i[0]):i[1] for i in self.cursor.fetchall()}
 
+        xslx_id2fastq_id = {}
+        for row in self.cursor.fetchall():
+            if row[0] not in xslx_id2fastq_id:
+                xslx_id2fastq_id[row[0]] = [row[1]]
+            else:
+                xslx_id2fastq_id[row[0]].append(row[1])
+
+        return xslx_id2fastq_id
+
+    def get_xslx_id2fastq_id(self,):
+        '''
+        TODO: deal with samples with multiple fastq ids 
+        '''
+        sql = '''select t2.xlsx_sample_ID,t1.fastq_id from GEN_fastqtosample t1 
+                inner join GEN_sample t2 on t1.sample_id=t2.id '''
+        self.cursor.execute(sql,) 
+
+        return {int(i[0]):i[1] for i in self.cursor.fetchall()}
 
     def get_xslx_id2sample_id(self,):
         
@@ -1758,8 +1777,11 @@ def add_analysis_metadata(analysis_id, term, value, update=False):
         m.save()
     else:
         # update value
-        m = AnalysisMetadata.objects.filter(term=term, analysis_id=analysis_id)[0]
-        m.value = value
+        try:
+            m = AnalysisMetadata.objects.filter(term=term, analysis_id=analysis_id)[0]
+            m.value = value
+        except:
+            m = AnalysisMetadata(term=term, analysis_id=analysis_id, value=value)
         m.save()
         
 def create_analysis(fastq_id_list,
