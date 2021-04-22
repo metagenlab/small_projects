@@ -627,7 +627,7 @@ class DB:
     #    it may be possible to factor out the redundant code
     #  - when querying for seqids, two many joins are being performed
     #    it may be worth it to simplify this
-    def get_ko_hits(self, ids, indexing="bioentry", search_on="bioentry"):
+    def get_ko_hits(self, ids, indexing="bioentry", search_on="bioentry", keep_taxid=False):
         prot_query = ",".join("?" for i in ids)
 
         if search_on=="bioentry":
@@ -1438,39 +1438,40 @@ class DB:
         If the flag is set, MultiIndex(taxid, is_plasmid). If it is not set Index(taxid)
         """
 
-        sel = "entry.taxon_id"
+        group_by = ""
+        select   = "SELECT entry.taxon_id, orthogroup, COUNT(*) "
+        group_by = "GROUP BY entry.taxon_id, orthogroup"
         if search_on=="taxid":
             where_clause = "entry.taxon_id"
         elif search_on=="orthogroup":
             where_clause = "og.orthogroup"
         elif search_on=="seqid":
             where_clause = "feature.seqfeature_id"
-            sel = where_clause
+            select       = "SELECT feature.seqfeature_id, orthogroup"
+            group_by     = ""
+            if keep_taxid:
+                select += ", entry.taxon_id "
         else:
             raise RuntimeError(f"Unsupported search {search_on}, must use orthogroup, bioentry or seqid")
 
         entries = ",".join("?" for i in lookup_terms)
         query = (
-            f"SELECT entry.taxon_id, feature.seqfeature_id, orthogroup, count(*) "
+            f"{select}"
             "FROM bioentry AS entry "
             "INNER JOIN seqfeature AS feature ON entry.bioentry_id = feature.bioentry_id " 
             "INNER JOIN og_hits AS og ON og.seqid = feature.seqfeature_id "
             f"WHERE {where_clause} IN ({entries}) "
-            f"GROUP BY {sel}, orthogroup;"
+            f"{group_by};"
         )
         results = self.server.adaptor.execute_and_fetchall(query, lookup_terms)
 
         header = None
         if search_on=="taxid" or search_on=="orthogroup":
             header = ["taxid", "orthogroup", "count"]
-            results = ((taxid, og, count) for taxid, seqid, og, count in results)
         elif search_on=="seqid":
             header = ["seqid", "orthogroup"]
             if keep_taxid:
                 header.append("taxid")
-                results = ((seqid, og, taxid) for taxid, seqid, og, _ in results)
-            else:
-                results = ((seqid, og) for taxid, seqid, og, _ in results)
 
         df = DB.to_pandas_frame(results, header)
         if len(df.index) == 0:
