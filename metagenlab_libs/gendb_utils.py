@@ -1271,10 +1271,7 @@ class DB:
                     return None
                 else:
                     print(f"Problem with sample ID: {sample_xls_id}")
-                    raise
-            else:
-                print("Unknown error")
-                raise                                                  
+                    raise                                               
 
         else:                                                        
             raise IOError(f"Unknown db driver: {GEN_settings.DB_DRIVER}")
