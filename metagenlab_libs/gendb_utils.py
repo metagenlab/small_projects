@@ -1126,22 +1126,22 @@ class DB:
         if search_type=="exact_match":
             # search sample table 
             # sample_name, xlsx_sample_id, molis_id
-            sql_sample = '''select t1.id,t2.fastq_id,sample_name, xlsx_sample_id, molis_id from GEN_sample t1 
-                            inner join GEN_fastqtosample t2 on t1.id=t2.sample_id where t1.id=? or sample_name=? or xlsx_sample_id=? or molis_id=? limit 1000'''
+            sql_sample = f'''select t1.id,t2.fastq_id,sample_name, xlsx_sample_id, molis_id from GEN_sample t1 
+                            inner join GEN_fastqtosample t2 on t1.id=t2.sample_id where t1.id={self.spl} or sample_name={self.spl} or xlsx_sample_id={self.spl} or molis_id={self.spl} limit 1000'''
 
             # search metadata fastq 
-            sql_fastq_metadata = '''select t2.sample_id,t1.fastq_id, value,t3.name from GEN_fastqfilesmetadata t1 
+            sql_fastq_metadata = f'''select t2.sample_id,t1.fastq_id, value,t3.name from GEN_fastqfilesmetadata t1 
                                     inner join GEN_fastqtosample t2 on t1.fastq_id=t2.fastq_id 
                                     inner join GEN_term t3 on t1.term_id=t3.id
-                                    where t1.fastq_id=? or value=? limit 1000
+                                    where t1.fastq_id={self.spl} or value={self.spl} limit 1000
                                 '''
 
             # search metadata sample
             
-            sql_sample_metadata = '''select t1.sample_id,t2.fastq_id, value,t3.name from GEN_samplemetadata t1 
+            sql_sample_metadata = f'''select t1.sample_id,t2.fastq_id, value,t3.name from GEN_samplemetadata t1 
                                      inner join GEN_fastqtosample t2 on t1.sample_id=t2.sample_id 
                                      inner join GEN_term t3 on t1.term_id=t3.id
-                                     where value=? limit 1000
+                                     where value={self.spl} limit 1000
                                    '''
 
             hits_sample_df = pandas.read_sql(sql_sample, self.conn, params=[term,term,term,term])
@@ -1315,7 +1315,7 @@ class DB:
             return fastq_id_list
 
     def match_sample_to_fastq(self, sample_prefix, filter_already_mapped=False):
-        sql = 'select id from GEN_fastqfiles where fastq_prefix=?'
+        sql = f'select id from GEN_fastqfiles where fastq_prefix={self.spl}'
         
         try:
             self.cursor.execute(sql,(sample_prefix,)) 
@@ -1536,10 +1536,10 @@ class DB:
 
     def add_QC_report(self, run_name, run_path):
         
-        sql = 'update GEN_runs set qc=1 where run_name=?'
+        sql = f'update GEN_runs set qc=1 where run_name={self.spl}'
         self.cursor.execute(sql, [run_name]) 
         
-        sql = 'update GEN_runs set qc_path=? where run_name=?'
+        sql = f'update GEN_runs set qc_path={self.spl} where run_name={self.spl}'
         self.cursor.execute(sql, (run_path, run_name))
         self.conn.commit()
     
