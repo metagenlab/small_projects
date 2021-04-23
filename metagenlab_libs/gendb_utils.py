@@ -1732,7 +1732,10 @@ class DB:
                     elif field_definition[field]["type"] == 'concatenate':
                         field_list = field_definition[field]["fields"]
                         values = row[field_list].to_list()
-                        val = ''.join(values)
+                        if 'zfill' in field_definition[field]:
+                            val = ''.join([str(x).zfill(y) for i in zip(values, field_definition[field]['zfill'])])
+                        else:
+                            val = ''.join(values)
                     elif field_definition[field]["type"] == 'age':
                         date_a = datetime.datetime.strptime(row[field_definition[field]["fields"][0]], '%Y-%m-%d')
                         date_b = datetime.datetime.strptime(row[field_definition[field]["fields"][1]], '%Y-%m-%d')
