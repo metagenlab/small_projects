@@ -1567,14 +1567,14 @@ class DB:
 
         df = pandas.read_sql(sql, self.conn).set_index("fastq_id")
 
-        fastq2data = {fastq_id: {} for fastq_id in df.index.unique()}
+        fastq2data = {str(fastq_id): {} for fastq_id in df.index.unique()}
         
         for fastq_id in list(fastq2data.keys()):
             target_fastq = df.loc[fastq_id]
             aa_changes = [f'{pos["aa_change"]} ({pos["gene"]})' for n, pos in target_fastq.iterrows() if not pandas.isna(pos["aa_change"])]
-            nucl_changes = [pos["nucl_change"] for n, pos in target_fastq.iterrows()]
-            fastq2data[fastq_id]["aa_changes"] = ';'.join(aa_changes)
-            fastq2data[fastq_id]["nucl_changes"] = ';'.join(nucl_changes)
+            nucl_changes = [str(pos["nucl_change"]) for n, pos in target_fastq.iterrows()]
+            fastq2data[str(fastq_id)]["aa_changes"] = ';'.join(aa_changes)
+            fastq2data[str(fastq_id)]["nucl_changes"] = ';'.join(nucl_changes)
             
         return fastq2data   
         
