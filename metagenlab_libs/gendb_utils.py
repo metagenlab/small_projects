@@ -156,7 +156,7 @@ class DB:
         inner join GEN_sample t2 on t1.sample_id=t2.id
         '''
         self.cursor.execute(sql,) 
-        return {i[0]:i[1] for i in self.cursor.fetchall()}
+        return {str(i[0]):i[1] for i in self.cursor.fetchall()}
 
     def get_molis_id2sample_id_list(self,):
 
