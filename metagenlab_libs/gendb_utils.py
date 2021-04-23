@@ -1558,7 +1558,7 @@ class DB:
         '''
         self.cursor.execute(sql,)
         
-        return [i[0] for i in self.cursor.fetchall()]
+        return [str(i[0]) for i in self.cursor.fetchall()]
         
     def format_snps(self, fastq_id_list, alt_freq_cutoff=70):
         
