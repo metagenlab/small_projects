@@ -462,7 +462,7 @@ class DB:
 
         snp_matrix = self.get_snp_matrix(analysis_id)
 
-        snp_matrix.to_csv("/media/IMU/GEN/PROJECTS/135_COVIDGEN_20_019/NOSOCOV/results/phylogeny_test_LIMS.csv", sep="\t")
+        #snp_matrix.to_csv("/media/IMU/GEN/PROJECTS/135_COVIDGEN_20_019/NOSOCOV/results/phylogeny_test_LIMS.csv", sep="\t")
 
         # nj
         from skbio import DistanceMatrix
@@ -589,7 +589,7 @@ class DB:
         print("plotting...")
         ete_tree.remove_dots()
 
-        ete_tree.tree.render("/media/IMU/GEN/PROJECTS/135_COVIDGEN_20_019/NOSOCOV/results/phylogeny_test_LIMS.svg",tree_style=ete_tree.tss, w=183, units="mm")
+        #ete_tree.tree.render("/media/IMU/GEN/PROJECTS/135_COVIDGEN_20_019/NOSOCOV/results/phylogeny_test_LIMS.svg",tree_style=ete_tree.tss, w=183, units="mm")
 
 
 
@@ -1480,19 +1480,19 @@ class DB:
 
         # add number of snp present in each sample
         fastq_id2n_snps = df2.groupby(["fastq_id"])["fastq_id"].count().to_dict()
-        df["n_snps"] = [fastq_id2n_snps[i] for i in df["fastq_id"]]
+        df["n_snps"] = [fastq_id2n_snps[str(i)] for i in df["fastq_id"]]
 
         # add run name
         fastq2run_name = self.get_fastq_id2run_name()
-        df["run_name"] = [fastq2run_name[i] for i in df["fastq_id"]]
+        df["run_name"] = [fastq2run_name[str(i)] for i in df["fastq_id"]]
 
         # add patient id
         fastq_id2patient_id = self.get_fastq_metadata("patient_id", index_str=True)
-        df["patient_id"] = [fastq_id2patient_id[i] if i in fastq_id2patient_id else '-' for i in df["fastq_id"]]
+        df["patient_id"] = [fastq_id2patient_id[str(i)] if i in fastq_id2patient_id else '-' for i in df["fastq_id"]]
 
         # add patient id
         fastq_id2pangolin_lineage = self.get_fastq_metadata("pangolin_lineage", index_str=True)
-        df["pangolin_lineage"] = [fastq_id2pangolin_lineage[i] if i in fastq_id2pangolin_lineage else '-' for i in df["fastq_id"]]
+        df["pangolin_lineage"] = [fastq_id2pangolin_lineage[str(i)] if i in fastq_id2pangolin_lineage else '-' for i in df["fastq_id"]]
 
         return df
 
@@ -1556,8 +1556,9 @@ class DB:
                  inner join GEN_term t2 on t1.term_id=t2.id 
                  where t1.analysis_id={analysis_id} and t2.name="qc_status" and t1.value="{value}" {filter_str};
         '''
+        self.cursor.execute(sql,)
         
-        return [i[0] for i in self.cursor.execute(sql,)]
+        return [i[0] for i in self.cursor.fetchall()]
         
     def format_snps(self, fastq_id_list, alt_freq_cutoff=70):
         
