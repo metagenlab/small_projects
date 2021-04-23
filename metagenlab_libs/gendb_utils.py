@@ -1480,19 +1480,19 @@ class DB:
 
         # add number of snp present in each sample
         fastq_id2n_snps = df2.groupby(["fastq_id"])["fastq_id"].count().to_dict()
-        df["n_snps"] = [fastq_id2n_snps[str(i)] for i in df["fastq_id"]]
+        df["n_snps"] = [fastq_id2n_snps[i] for i in df["fastq_id"]]
 
         # add run name
         fastq2run_name = self.get_fastq_id2run_name()
         df["run_name"] = [fastq2run_name[str(i)] for i in df["fastq_id"]]
 
         # add patient id
-        fastq_id2patient_id = self.get_fastq_metadata("patient_id", index_str=True)
-        df["patient_id"] = [fastq_id2patient_id[str(i)] if i in fastq_id2patient_id else '-' for i in df["fastq_id"]]
+        fastq_id2patient_id = self.get_fastq_metadata("patient_id", index_str=False)
+        df["patient_id"] = [fastq_id2patient_id[i] if i in fastq_id2patient_id else '-' for i in df["fastq_id"]]
 
         # add patient id
-        fastq_id2pangolin_lineage = self.get_fastq_metadata("pangolin_lineage", index_str=True)
-        df["pangolin_lineage"] = [fastq_id2pangolin_lineage[str(i)] if i in fastq_id2pangolin_lineage else '-' for i in df["fastq_id"]]
+        fastq_id2pangolin_lineage = self.get_fastq_metadata("pangolin_lineage", index_str=False)
+        df["pangolin_lineage"] = [fastq_id2pangolin_lineage[i] if i in fastq_id2pangolin_lineage else '-' for i in df["fastq_id"]]
 
         return df
 
