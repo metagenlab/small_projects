@@ -838,9 +838,9 @@ class DB:
 
 
 
-    def get_fastq_metadata_stats(self, term_list, analysis_id_list):
+    def get_fastq_metadata_stats(self, term_list, analysis_id_list=False, workflow_id=False):
 
-        df = self.get_fastq_metadata_list(term_list, analysis_id_list=analysis_id_list)[["fastq_id","name","value"]]
+        df = self.get_fastq_metadata_list(term_list, analysis_id_list=analysis_id_list, workflow_id=workflow_id)[["fastq_id","name","value"]]
         
         df["value"] = pandas.to_numeric(df["value"])
         term2median = df.groupby(["name"])['value'].median().round(3).to_dict()
