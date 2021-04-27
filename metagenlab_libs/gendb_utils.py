@@ -1404,6 +1404,7 @@ class DB:
                            value,
                            analysis_id=False):
         '''
+        skip duplicates by default
         [{"fastq_id": fastq_id,
         "term_name": <name>,
         "value": <value>,
@@ -1412,12 +1413,20 @@ class DB:
         from GEN.models import Term
         from GEN.models import FastqFilesMetadata
         term = Term.objects.get_or_create(name=term_name)[0]
-        if not analysis_id:
-            m = FastqFilesMetadata(term=term, fastq_id=fastq_id, value=value)
-            m.save()
-        else:
-            m = FastqFilesMetadata(term=term, fastq_id=fastq_id, value=value, analysis_id=analysis_id)
-            m.save()
+        try:
+            if not analysis_id:
+                m = FastqFilesMetadata(term=term, fastq_id=fastq_id, value=value)
+                m.save()
+            else:
+                m = FastqFilesMetadata(term=term, fastq_id=fastq_id, value=value, analysis_id=analysis_id)
+                m.save()
+        except IntegrityError as e:
+            if 'UNIQUE' in str(e) or 'Duplicate' in str(e):
+                  #print(f'UNIQUE constraint failed: {sample_id} -- {key}')
+                  pass
+            else:
+                  print("other error")
+                  raise
 
     def add_sample_metadata(self, 
                            sample_id,
