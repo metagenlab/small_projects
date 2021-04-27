@@ -923,12 +923,12 @@ class DB:
 
         # fastq_id, t2.name,t1.value, run_name
         # default score to 0
-        fastq_id2n_fail = {i:0 for i in df["fastq_id"].to_list()}
-        fastq_id2n_warn = {i:0 for i in df["fastq_id"].to_list()}
-        fastq_id2metric2score = {i:{} for i in df["fastq_id"].to_list()}
+        fastq_id2n_fail = {str(i):0 for i in df["fastq_id"].to_list()}
+        fastq_id2n_warn = {str(i):0 for i in df["fastq_id"].to_list()}
+        fastq_id2metric2score = {str(i):{} for i in df["fastq_id"].to_list()}
                 
         for n, row in df.iterrows(): 
-            fastq_id = row["fastq_id"]
+            fastq_id = str(row["fastq_id"])
 
             if row["name"] in metric2scoring:
                 
@@ -937,10 +937,6 @@ class DB:
                 UCL_failed = metric2scoring[row["name"]]["UCL_failed"]
                 LCL_warning = metric2scoring[row["name"]]["LCL_warning"]
                 UCL_warning = metric2scoring[row["name"]]["UCL_warning"]
-                
-                
-                
-                
                 
                 if LCL_failed:
                     if float(float(row["value"])) < float(LCL_failed):
