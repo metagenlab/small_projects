@@ -267,6 +267,7 @@ class DB:
             {res_filter_sample}
             '''
 
+        print(sql)
 
         df = pandas.read_sql(sql, self.conn)
         if add_molis:
@@ -916,6 +917,7 @@ class DB:
 
         print("metric2scoring", metric2scoring)
 
+        print("workflow_id", workflow_id)
         df = self.get_fastq_metadata_list(term_list=list(metric2scoring.keys()), 
                                           fastq_filter=fastq_id_list,
                                           analysis_id_list=analysis_id_list,
