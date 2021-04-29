@@ -267,8 +267,6 @@ class DB:
             {res_filter_sample}
             '''
 
-        print(sql)
-
         df = pandas.read_sql(sql, self.conn)
         if add_molis:
             print("adding molis")
@@ -901,7 +899,8 @@ class DB:
                  fastq_id_list, 
                  config,
                  workflow_id=False,
-                 analysis_id_list=False):
+                 analysis_id_list=False,
+                 index_int=False):
 
         from GEN.models import Workflow
 
@@ -967,6 +966,11 @@ class DB:
 
         print("fastq_id2n_warn", fastq_id2n_warn)
         print("fastq_id2n_fail", fastq_id2n_fail)
+
+        if index_int:
+            fastq_id2n_fail = {int(k):v for k,v in fastq_id2n_fail.items()}
+            fastq_id2n_warn = {int(k):v for k,v in fastq_id2n_warn.items()}
+            fastq_id2metric2score = {int(k):v for k,v in fastq_id2metric2score.items()}
         return fastq_id2n_fail, fastq_id2n_warn, fastq_id2metric2score
 
     def get_run_name2run_id(self,):
@@ -1740,7 +1744,7 @@ class DB:
                         field_list = field_definition[field]["fields"]
                         values = row[field_list].to_list()
                         if 'zfill' in field_definition[field]:
-                            val = ''.join([str(x).zfill(y) for i in zip(values, field_definition[field]['zfill'])])
+                            val = ''.join([str(x).zfill(y) for x,y in zip(values, field_definition[field]['zfill'])])
                         else:
                             val = ''.join(values)
                     elif field_definition[field]["type"] == 'age':
