@@ -208,7 +208,8 @@ class DB:
                                 add_molis=False,
                                 analysis_id_list=False,
                                 subproject_id_list=False,
-                                workflow_id=False):
+                                workflow_id_list=False,
+                                exclude_analysis_id_list=False):
         '''
         retrieve metadata from both sample and fastq metadata table
         TODO will curently combine dta from multiple anlayses => should retun analysis_id as well
@@ -243,9 +244,14 @@ class DB:
         if subproject_id_list:
             metadata_filter = '","'.join(subproject_id_list)
             res_filter_fastq += f' and t5.subproject_id in ("{metadata_filter}")'  
-        if workflow_id:
+        if workflow_id_list:
             workflow_filter = 'inner join GEN_analysis t6 on t1.analysis_id=t6.id'
-            res_filter_fastq += f' and t6.workflow_id={workflow_id}'
+            metadata_filter = '","'.join([str(i) for i in workflow_id_list])
+            res_filter_fastq += f' and t6.workflow_id in ({metadata_filter})'
+        if exclude_analysis_id_list:
+            metadata_filter = ','.join(exclude_analysis_id_list)
+            res_filter_fastq += f' and t1.analysis_id not in ({metadata_filter})'
+            res_filter_sample += f' and t6.analysis_id not in ({metadata_filter})' 
         
         sql = f'''
             select distinct t1.fastq_id, t2.name,t1.value, run_name from GEN_fastqfilesmetadata t1 
@@ -266,6 +272,7 @@ class DB:
             where t4.fastq_prefix not like "Undetermined%"
             {res_filter_sample}
             '''
+        print(sql)
 
         df = pandas.read_sql(sql, self.conn)
         if add_molis:
@@ -838,8 +845,12 @@ class DB:
 
 
     def get_fastq_metadata_stats(self, term_list, analysis_id_list=False, workflow_id=False):
-
-        df = self.get_fastq_metadata_list(term_list, analysis_id_list=analysis_id_list, workflow_id=workflow_id)[["fastq_id","name","value"]]
+        
+        if workflow_id:
+            workflow_id_list = [workflow_id]
+        else:
+            workflow_id_list = False
+        df = self.get_fastq_metadata_list(term_list, analysis_id_list=analysis_id_list, workflow_id_list=workflow_id_list)[["fastq_id","name","value"]]
         
         df["value"] = pandas.to_numeric(df["value"])
         term2median = df.groupby(["name"])['value'].median().round(3).to_dict()
@@ -916,11 +927,14 @@ class DB:
 
         print("metric2scoring", metric2scoring)
 
-        print("workflow_id", workflow_id)
+        if workflow_id:
+            workflow_id_list = [workflow_id]
+        else:
+            workflow_id_list = False
         df = self.get_fastq_metadata_list(term_list=list(metric2scoring.keys()), 
                                           fastq_filter=fastq_id_list,
                                           analysis_id_list=analysis_id_list,
-                                          workflow_id=workflow_id)
+                                          workflow_id_list=workflow_id_list)
 
         # fastq_id, t2.name,t1.value, run_name
         # default score to 0
@@ -1107,17 +1121,21 @@ class DB:
         # metadata 
         pass
 
-    def get_analysis_overview(self, analysis_id_list):
-        
-        analysis_filter = '","'.join([str(i) for i in analysis_id_list])
-
+    def get_analysis_overview(self, analysis_id_list=False):
+        print(analysis_id_list)
+        if isinstance(analysis_id_list, list):
+            analysis_filter = '","'.join([str(i) for i in analysis_id_list])
+            filter_str = f'and t1.analysis_id in ("{analysis_filter}") '
+        else:
+            filter_str = ''
+        print("filter_str", filter_str)
         sql_analyse_metadata = f'''select t1.analysis_id,t4.value as description, start_date,workflow_name,count(*) as n_samples,t2.status from GEN_fastqset t1 
                                     inner join GEN_analysis t2 on t1.analysis_id=t2.id 
                                     inner join GEN_workflow t3 on t2.workflow_id=t3.id 
                                     inner join GEN_analysismetadata t4 on t1.analysis_id=t4.analysis_id
                                     inner join GEN_term t5 on t4.term_id=t5.id
-                                    where t5.name='description' and t1.analysis_id in ("{analysis_filter}") group by t1.analysis_id,t4.value,start_date,workflow_name'''
-
+                                    where t5.name='description' {filter_str} group by t1.analysis_id,t4.value,start_date,workflow_name'''
+        print(sql_analyse_metadata)
         analyses = pandas.read_sql(sql_analyse_metadata, self.conn)
 
         return analyses
