@@ -332,7 +332,7 @@ class DB:
 
         snp_matrix = pandas.pivot(pairsnp_filtered_df, index="genome_1", columns="genome_2", values="SNPs").fillna(20)
 
-        snp_matrix.to_csv("/media/IMU/GEN/PROJECTS/156_NOSOCOV/Analysis/phylogeny_test_LIMS_with_context.csv", sep="\t")
+        snp_matrix.to_csv("/media/IMU/GEN/PROJECTS/156_NOSOCOV/Analysis/phylogeny_test_LIMS_with_context_v2.csv", sep="\t")
 
         cols = set(snp_matrix.columns)
         rows = set(snp_matrix.index)
@@ -458,7 +458,7 @@ class DB:
         print("plotting...")
         ete_tree.remove_dots()
         os.environ['QT_QPA_PLATFORM']='offscreen'
-        ete_tree.tree.render("/media/IMU/GEN/PROJECTS/156_NOSOCOV/Analysis/phylogeny_test_LIMS_external.svg",tree_style=ete_tree.tss, w=183, units="mm")
+        ete_tree.tree.render("/media/IMU/GEN/PROJECTS/156_NOSOCOV/Analysis/phylogeny_test_LIMS_external_v2.svg",tree_style=ete_tree.tss, w=183, units="mm")
 
 
 
@@ -1762,6 +1762,10 @@ class DB:
                         field_list = field_definition[field]["fields"]
                         values = row[field_list].to_list()
                         if 'zfill' in field_definition[field]:
+                            print('ZFILL')
+                            print('zipping1', values)
+                            print('zipping2', field_definition[field]['zfill'])
+                            print(zip(values, field_definition[field]['zfill']))
                             val = ''.join([str(x).zfill(y) for x,y in zip(values, field_definition[field]['zfill'])])
                         else:
                             val = ''.join(values)
