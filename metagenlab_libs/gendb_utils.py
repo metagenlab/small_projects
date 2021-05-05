@@ -406,11 +406,12 @@ class DB:
         ete_tree.add_text_face(fastq_id2fastq_id, 
                             header_name="fastq_id",
                             color_scale=False)
-
-        ete_tree.add_text_face(fastq_id2qc_status, 
-                            header_name="QC",
-                            color_scale=True)
-
+        try:
+            ete_tree.add_text_face(fastq_id2qc_status, 
+                                header_name="QC",
+                                color_scale=True)
+        except:
+            pass
         ete_tree.add_text_face(fastq_id2lineage, 
                             header_name="lineage",
                             color_scale=True)
