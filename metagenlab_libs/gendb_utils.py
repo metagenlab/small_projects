@@ -381,7 +381,12 @@ class DB:
         fastq_id2name = {key:value for key,value in pairsnp_metadata_df["patient_name"].to_dict().items() if not pandas.isna(value)}
         fastq_id2IPP = {key:int(value) for key,value in pairsnp_metadata_df["ipp"].to_dict().items() if not pandas.isna(value)}
         fastq_id2qc_status = {key:value for key,value in pairsnp_metadata_df["qc_status"].to_dict().items() if not pandas.isna(value)}
-        fastq_id2unit = {key:value for key,value in pairsnp_metadata_df["unit"].to_dict().items() if not pandas.isna(value)}
+        try:
+            fastq_id2Cluster = {key:value for key,value in pairsnp_metadata_df["Cluster"].to_dict().items() if not pandas.isna(value)}
+            fastq_id2Service_test = {key:value for key,value in pairsnp_metadata_df["Service_test"].to_dict().items() if not pandas.isna(value)}
+            fastq_idCode_Service = {key:value for key,value in pairsnp_metadata_df["Code_Service"].to_dict().items() if not pandas.isna(value)}
+        except:
+            pass
         fastq_id2origin = {key:("CHUV" if value=='local' else "Switzerland") for key,value in pairsnp_metadata_df["origin"].to_dict().items()}
         
         # plot
@@ -412,13 +417,25 @@ class DB:
                                 color_scale=True)
         except:
             pass
+
         ete_tree.add_text_face(fastq_id2lineage, 
                             header_name="lineage",
                             color_scale=True)
+        try:
+            ete_tree.add_text_face(fastq_id2Cluster, 
+                                header_name="Cluster",
+                                color_scale=True)
 
-        ete_tree.add_text_face(fastq_id2unit, 
-                            header_name="unit",
-                            color_scale=True)
+            # Service_test	Service_acquisition	Code_Service
+            ete_tree.add_text_face(fastq_id2Service_test, 
+                                header_name="Service_test",
+                                color_scale=True)
+
+            ete_tree.add_text_face(fastq_idCode_Service, 
+                                header_name="Code_Service",
+                                color_scale=True)
+        except:
+            pass
 
         ete_tree.add_text_face(fastq_id2sample_date, 
                             header_name="date",
@@ -431,6 +448,7 @@ class DB:
         #ete_tree.add_text_face(fastq_id2month, 
         #                    header_name="month",
         #                    color_scale=True)
+        
 
         ete_tree.add_text_face(fastq_id2name, 
                             header_name="patient",
