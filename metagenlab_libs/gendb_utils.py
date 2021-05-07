@@ -1504,16 +1504,36 @@ class DB:
             term_id2term_name[term_id] = term.name
         return term_id2term_name
 
-    def fastq_mutation(self, aa_change_list, analysis_id, min_alt_freq=70):
+    def fastq_mutation(self, 
+                       aa_change_list, 
+                       analysis_id_list=False, 
+                       fastq_id_list=False,
+                       min_alt_freq=70,
+                       return_df=False):
         
         change_filter = '","'.join(aa_change_list)
-        sql = f'select fastq_id,aa_change from GEN_snps where aa_change in ("{change_filter}") and analysis_id={analysis_id} and alt_percent>{min_alt_freq};'
+        if analysis_id_list:
+            analysis_list = ','.join([str(i) for i in analysis_id_list])
+            analysis_filter = f'and analysis_id in ({analysis_list})'
+        else:
+            analysis_filter = ''
+        if fastq_id_list:
+            fastq_list = ','.join([str(i) for i in fastq_id_list])
+            fastq_filter = f'and fastq_id in ({fastq_list})'
+        else:
+            fastq_filter = ''
+        sql = f'''select fastq_id,aa_change from GEN_snps where aa_change in ("{change_filter}") 
+                  {analysis_filter} 
+                  {fastq_filter}
+                  and alt_percent>{min_alt_freq};'''
         df = pandas.read_sql(sql, self.conn)
-        fastq2changes = {i:[] for i in df["fastq_id"].to_list()}
-        for n, row in df.iterrows():
-            fastq2changes[row["fastq_id"]].append(row["aa_change"])
-
-        return fastq2changes
+        if return_df:
+            return df
+        else:
+            fastq2changes = {i:[] for i in df["fastq_id"].to_list()}
+            for n, row in df.iterrows():
+                fastq2changes[row["fastq_id"]].append(row["aa_change"])
+            return fastq2changes
 
 
     def snp_to_fastq(self, nucl_change, min_alt_freq=70, type='nucl_change'):
