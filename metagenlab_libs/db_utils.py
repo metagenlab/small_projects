@@ -1667,8 +1667,7 @@ class DB:
 
 
     def update_plasmid_status(self, plasmid_bioentries):
-        results = self.server.adaptor.execute_and_fetchall("SELECT term_id FROM term WHERE name=\"plasmid\";")
-        plasmid_term_id = results[0][0]
+        plasmid_term_id = self.get_term_id("plasmid", create_if_absent=True)
         sql = (
             "INSERT INTO bioentry_qualifier_value VALUES  "
             " (?, ?, ?, 0);"
