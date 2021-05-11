@@ -1689,7 +1689,9 @@ class DB:
         self.cursor.execute(sql,)
         return {i[0]:i[1] for i in self.cursor.fetchall()}
     
-    def get_fastq_id2sample_name(self, fastq_list, key_str=True):
+    def get_fastq_id2sample_name(self, 
+                                 fastq_list, 
+                                 key_str=True):
         
         fastq_list_filter = '","'.join([str(i) for i in fastq_list])
         sql = f'''select distinct fastq_id,sample_name from GEN_fastqfiles t1 
@@ -1702,6 +1704,42 @@ class DB:
             return {str(i[0]):i[1] for i in self.cursor.fetchall()}
         else:
             return {int(i[0]):i[1] for i in self.cursor.fetchall()}
+
+
+    def generate_sample_file_GENCOV(self,fastq_id_list):
+
+        '''
+        Yaml of the form 
+        '1016073361_1546':
+            alt_id: Sample_1
+            read1: /scratch/hdd/tpillone/projects/airflow_test/epidemiology/2021_01_05-1501_Z1UBOZ/cov_minipipe/1016073361_1546_R1.fastq.gz
+            read2: /scratch/hdd/tpillone/projects/airflow_test/epidemiology/2021_01_05-1501_Z1UBOZ/cov_minipipe/1016073361_1546_R2.fastq.gz
+        '''
+        # id,fastq_prefix,R1,R2,species_name
+        fastq_df = self.get_fastq_and_sample_data(fastq_id_list)
+        
+        dict_file = {}
+
+        for n, row in fastq_df.iterrows():
+            
+            # deal with multiple fastq with same name
+            R1 = row["R1"]
+            R2 = row["R2"]
+            #if '20210201' in R1:
+            #    R1 = re.sub("20210201", "20210201_CleanPlex", row["R1"])
+            #    R2 = re.sub("20210201", "20210201_CleanPlex", row["R2"])
+            #if '20210208' in R1:
+            #    R1 = re.sub("20210208", "20210208_CleanPlex", row["R1"])
+            #    R2 = re.sub("20210208", "20210208_CleanPlex", row["R2"])
+            fastq_id = row["fastq_id"]
+            sample_name = f'{row["fastq_prefix"]}_{fastq_id}'
+            dict_file[sample_name] = {'alt_id': f'Sample_{n+1}',
+                                    'read1': R1,
+                                    'read2': R2,
+                                    }
+            
+        return dict_file
+
 
     def get_sample_table(self, suproject_id_list=False):
         
