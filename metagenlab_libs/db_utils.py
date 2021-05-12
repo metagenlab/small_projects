@@ -538,7 +538,7 @@ class DB:
         return hsh_results
 
 
-    def get_ko_count_cat(self, category=None, taxon_ids=None, category_name=None):
+    def get_ko_count_cat(self, category=None, taxon_ids=None, category_name=None, index=True):
         if category!=None and category_name!=None:
             raise RuntimeError("Selection on both category and category name not supported")
         if category==None and category_name==None:
@@ -548,7 +548,7 @@ class DB:
         args = []
         if taxon_ids != None:
             sel_str = ",".join("?" for _ in taxon_ids)
-            sel = f" AND fet.bioentry_id IN ({sel_str})"
+            sel = f" AND entry.taxon_id IN ({sel_str})"
             args = taxon_ids
 
         if category != None:
@@ -574,7 +574,10 @@ class DB:
         )
         results = self.server.adaptor.execute_and_fetchall(query, args)
         columns = ["taxon_id", "module_id", "KO", "count"]
-        return DB.to_pandas_frame(results, columns).set_index(["taxon_id", "module_id", "KO"])
+        df = DB.to_pandas_frame(results, columns)
+        if index == False:
+            return df
+        return df.set_index(["taxon_id", "module_id", "KO"])
 
 
     def get_modules_info(self, modules_id, as_pandas=False):
@@ -1454,8 +1457,8 @@ class DB:
         elif search_on=="orthogroup":
             where_clause = "og.orthogroup"
         elif search_on=="seqid":
-            where_clause = "feature.seqfeature_id"
-            select       = "SELECT feature.seqfeature_id, orthogroup"
+            where_clause = "feature.seqfeature_id "
+            select       = "SELECT feature.seqfeature_id, og.orthogroup "
             group_by     = ""
             if keep_taxid:
                 select += ", entry.taxon_id "
@@ -1464,7 +1467,7 @@ class DB:
 
         entries = ",".join("?" for i in lookup_terms)
         query = (
-            f"{select}"
+            f"{select} "
             "FROM bioentry AS entry "
             "INNER JOIN seqfeature AS feature ON entry.bioentry_id = feature.bioentry_id " 
             "INNER JOIN og_hits AS og ON og.seqid = feature.seqfeature_id "

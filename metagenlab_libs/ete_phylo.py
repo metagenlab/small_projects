@@ -27,7 +27,8 @@ class EteTree:
     def default_tree(nwck, **drawing_params):
         t = Tree(nwck)
         mid_point = t.get_midpoint_outgroup()
-        t.set_outgroup(mid_point)
+        if not mid_point is None:
+            t.set_outgroup(mid_point)
         t.ladderize()
         return EteTree(t, **drawing_params)
 
@@ -54,21 +55,28 @@ class EteTree:
 
     # May be a good idea to be able to give custom parameters to the node names
     def get_leaf_name(self, index):
-        label = self.leaves_name.get(index, self.default_val)
+        if self.leaf_name_type is int:
+            idx = int(index)
+        elif self.leaf_name_type is str:
+            idx = index
+        else:
+            raise Exception("Unsupported indexing type ", self.leaf_name_type)
+        label = self.leaves_name.get(idx, self.default_val)
         t = TextFace(label, fgcolor = "black", fsize = 7, fstyle = "italic")
         t.margin_right=10
         return t
 
-    def rename_leaves(self, hsh_names, default_val="-"):
+    def rename_leaves(self, hsh_names, default_val="-", leaf_name_type=int):
         self.default_val = default_val
         if not isinstance(hsh_names, dict):
             raise Exception("Expects dict type for hsh_names")
         self.leaves_name = hsh_names
+        self.leaf_name_type = leaf_name_type
 
     def render(self, destination, **kwargs):
         for leaf in self.tree.iter_leaves():
             if not self.leaves_name is None:
-                leaf.add_face(self.get_leaf_name(int(leaf.name)), 0, "branch-right")
+                leaf.add_face(self.get_leaf_name(leaf.name), 0, "branch-right")
 
             for col_no, column in enumerate(self.columns):
                 # Note: this assumes that only bioentries (integer)
