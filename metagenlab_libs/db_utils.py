@@ -34,6 +34,14 @@ class DB:
         # this will need to be changed in case a MySQL database is used
         self.placeholder = "?"
 
+    # the next two methods are necessary for DB objects to be used
+    # in 'with' blocks.
+    def __enter__(self):
+        return self
+
+    def __exit__(self, type, value, traceback):
+        self.server.close()
+
     def create_indices_on_cds(self):
         sql_index1 = 'create index ftgcga on feature_tables_genomes_cds(genome_accession)'    
         sql_index2 = 'create index ftgctx on feature_tables_genomes_cds(taxon_id)'
@@ -886,10 +894,13 @@ class DB:
         self.server.adaptor.execute(sql,)
 
 
-    def get_config_table(self):
+    def get_config_table(self, ret_mandatory=False):
         sql = "SELECT * from biodb_config;"
         values = self.server.adaptor.execute_and_fetchall(sql)
-        return {val[0]: val[2] for val in values}
+        if ret_mandatory:
+            return {val[0]: (val[1]=="mandatory", val[2]) for val in values}
+        else:
+            return {val[0]: val[2] for val in values}
 
 
     def create_biosql_database(self, args):
@@ -1716,6 +1727,7 @@ class DB:
                                                   host = "127.0.0.1",
                                                   db=db_file)
         return DB(server, db_name)
+
 
     def load_db_from_name(db_name, db_type = "sqlite"):
         params = {"chlamdb.db_type" : db_type, "chlamdb.db_name" : db_name}
