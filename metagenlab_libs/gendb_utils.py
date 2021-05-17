@@ -209,7 +209,8 @@ class DB:
                                 analysis_id_list=False,
                                 subproject_id_list=False,
                                 workflow_id_list=False,
-                                exclude_analysis_id_list=False):
+                                exclude_analysis_id_list=False,
+                                fastq_intersection=False):
         '''
         retrieve metadata from both sample and fastq metadata table
         TODO will curently combine dta from multiple anlayses => should retun analysis_id as well
@@ -276,10 +277,13 @@ class DB:
             
         df_fastq = pandas.read_sql(sql_fastq, self.conn)
         df_samples = pandas.read_sql(sql_sample, self.conn).set_index("fastq_id")
+        print("HEAD", df_samples.head())
+        
+        if fastq_intersection:
+            intersection = set(df_fastq["fastq_id"].to_list()).intersection(set(df_samples.index.to_list()))
+            df_samples = df_samples.loc[intersection,]
 
-        df_samples = df_samples.loc[set(df_fastq["fastq_id"].to_list()),].reset_index()
-
-        df = pandas.concat([df_fastq, df_samples])
+        df = pandas.concat([df_fastq, df_samples.reset_index()])
         
         if add_molis:
             df_molis = self.get_fastq_and_sample_data(df["fastq_id"].to_list()).set_index("fastq_id")
@@ -748,7 +752,8 @@ class DB:
                                    metadata_value_list=False,
                                    add_molis=False,
                                    analysis_id_list=False,
-                                   subproject_id_list=False):
+                                   subproject_id_list=False,
+                                   fastq_intersection=False):
         '''
         retrieve metadata from both sample and fastq metadata table
         TODO will curently combine dta from multiple anlayses => should return analysis_id as well
@@ -804,10 +809,12 @@ class DB:
 
         df_fastq = pandas.read_sql(sql_fastq, self.conn)
         df_samples = pandas.read_sql(sql_sample, self.conn).set_index("fastq_id")
+        
+        if fastq_intersection:
+            intersection = set(df_fastq["fastq_id"].to_list()).intersection(set(df_samples.index.to_list()))
+            df_samples = df_samples.loc[intersection,]
 
-        df_samples = df_samples.loc[set(df_fastq["fastq_id"].to_list()),].reset_index()
-
-        df = pandas.concat([df_fastq, df_samples])
+        df = pandas.concat([df_fastq, df_samples.reset_index()])
         
         if add_molis:
             df_molis = self.get_fastq_and_sample_data(df["fastq_id"].to_list()).set_index("fastq_id")
