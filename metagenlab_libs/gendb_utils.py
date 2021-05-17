@@ -253,7 +253,7 @@ class DB:
             res_filter_fastq += f' and t1.analysis_id not in ({metadata_filter})'
             res_filter_sample += f' and t6.analysis_id not in ({metadata_filter})' 
         
-        sql = f'''
+        sql_fastq = f'''
             select distinct t1.fastq_id, t2.name,t1.value, run_name from GEN_fastqfilesmetadata t1 
             inner join GEN_term t2 on t1.term_id=t2.id 
             inner join GEN_fastqfiles t3 on t1.fastq_id=t3.id 
@@ -262,7 +262,8 @@ class DB:
             {workflow_filter}
             where t3.fastq_prefix not like "Undetermined%"
             {res_filter_fastq}
-            union 
+        '''
+        sql_sample = f'''
             select distinct t3.fastq_id, t2.name,t1.value,run_name from GEN_samplemetadata t1 
             inner join GEN_term t2 on t1.term_id=t2.id 
             inner join GEN_fastqtosample t3 on t1.sample_id=t3.sample_id
@@ -272,19 +273,18 @@ class DB:
             where t4.fastq_prefix not like "Undetermined%"
             {res_filter_sample}
             '''
-        print(sql)
+            
+        df_fastq = pandas.read_sql(sql_fastq, self.conn)
+        df_samples = pandas.read_sql(sql_sample, self.conn).set_index("fastq_id")
 
-        df = pandas.read_sql(sql, self.conn)
+        df_samples = df_samples.loc[set(df_fastq["fastq_id"].to_list()),].reset_index()
+
+        df = pandas.concat([df_fastq, df_samples])
+        
         if add_molis:
-            print("adding molis")
             df_molis = self.get_fastq_and_sample_data(df["fastq_id"].to_list()).set_index("fastq_id")
-            print(df_molis.head())
             df = df.set_index("fastq_id").join(df_molis, on="fastq_id", rsuffix='_other', how="left")
-            print("------------------")
-            print(df.head())
-            print("----------------------")
             df = df[["molis_id", "name", "value", "run_name"]]
-            print(df.head())
 
         return df
 
@@ -805,7 +805,7 @@ class DB:
         df_fastq = pandas.read_sql(sql_fastq, self.conn)
         df_samples = pandas.read_sql(sql_sample, self.conn).set_index("fastq_id")
 
-        df_samples = df_samples.loc[set(df_fastq["fastq_id"].to_list()),]
+        df_samples = df_samples.loc[set(df_fastq["fastq_id"].to_list()),].reset_index()
 
         df = pandas.concat([df_fastq, df_samples])
         
