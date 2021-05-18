@@ -3,6 +3,8 @@ import sys
 
 from BioSQL import BioSeqDatabase
 from Bio import SeqIO
+
+from Bio.Seq import Seq
 from Bio.SeqUtils import GC
 
 import sqlite3
@@ -1143,6 +1145,7 @@ class DB:
         values = self.server.adaptor.execute_and_fetchall(sql)
         return values[0][0]
 
+
     def get_bioentry_id_for_record(self, record):
         locus_tag = record["gene"]["locus_tag"]
         sql = (
@@ -1152,6 +1155,7 @@ class DB:
         )
         results = self.server.adaptor.execute_and_fetchall(sql)
         return results[0][0]
+
 
 
     def load_filenames(self, data):
@@ -1285,6 +1289,21 @@ class DB:
             raise RuntimeError("No such entry")
         return values[0][0]
 
+    
+    def get_bioentry(self, from_val, val_type="seqid"):
+        if val_type != "seqid":
+            raise Exception("For now, only seqid indexing is supported")
+        # may be extended in the future for other types of indexing
+
+        sql = (
+            "SELECT bioentry_id "
+            "FROM seqfeature "
+            "WHERE seqfeature_id = ?;"
+        )
+        values = self.server.adaptor.execute_and_fetchall(sql, [from_val])
+
+        # assumes result has been found
+        return values[0][0]
 
 
     def get_seqid_in_neighborhood(self, bioentry_id, start_loc, stop_loc):
@@ -1299,6 +1318,15 @@ class DB:
         if results==None:
             return []
         return [line[0] for line in results]
+
+
+    def get_DNA_sequence(self, bioentry_id, alphabet="dna"):
+        query = (
+            "SELECT seq FROM biosequence WHERE bioentry_id=? AND alphabet = ?;"
+        )
+
+        results = self.server.adaptor.execute_and_fetchall(query, [bioentry_id, alphabet])
+        return Seq(results[0][0])
 
 
     # Note: ordering by seqid makes it faster to assemble informations
