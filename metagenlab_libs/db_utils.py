@@ -1472,14 +1472,15 @@ class DB:
         return df.set_index(["seqid"])
 
 
-    def get_og_count(self, lookup_terms, search_on="taxid", diff_plasmid=False, keep_taxid=False):
+    def get_og_count(self, lookup_terms, search_on="taxid", plasmids=None, keep_taxid=False):
         """
         This function returns a pandas dataframe containing the orthogroup
         count for a set of taxon_ids. The user can differentiate between the chromosome
-        and the plasmid. TODO: The plasmid part is to be implemented.
+        and the plasmid.
 
-        diff_plasmid: should chromsome and plasmid be considered separately. If set to True, the count
-                for chromosome and plasmids will be done separately.
+        plasmids: if set to None, the function will not differentiate between
+            plasmids and chromosomes. Otherwise, should contain a list of taxids whose plasmids
+            will be taken into account in the search.
         lookup_term: the terms that will be search. Either a list of taxids, of orthogroup or of seqids.
         search_on: can be either orthogroup, seqid or taxid. Specifies what lookup_term is.
         keep_taxid: for queries using the seqid lookup term, also return the taxid in the results
@@ -1488,15 +1489,38 @@ class DB:
         If the flag is set, MultiIndex(taxid, is_plasmid). If it is not set Index(taxid)
         """
 
-        group_by = ""
-        select   = "SELECT entry.taxon_id, orthogroup, COUNT(*) "
-        group_by = "GROUP BY entry.taxon_id, orthogroup"
-        if search_on=="taxid":
-            where_clause = "entry.taxon_id"
+        if not plasmids is None and search_on!="taxid":
+            raise RuntimeError("Plasmid search only supported for taxid")
+
+        entries = self.gen_placeholder_string(lookup_terms)
+
+        add_plasmid = ""
+        if not plasmids is None:
+            add_plasmid = "CAST(is_plasmid.value AS int), "
+
+        select   = f"SELECT entry.taxon_id, {add_plasmid} orthogroup, COUNT(*) "
+        group_by = f"GROUP BY entry.taxon_id, {add_plasmid} orthogroup"
+        where_clause = None
+        add_plasmid_join = ""
+        if not plasmids is None:
+            plasmids_placeholder = self.gen_placeholder_string(plasmids)
+            add_plasmid = "is_plasmid.value"
+            add_plasmid_join = (
+                "INNER JOIN bioentry_qualifier_value AS is_plasmid ON "
+                "  is_plasmid.bioentry_id=entry.bioentry_id "
+                "INNER JOIN term AS plasmid_term ON plasmid_term.term_id=is_plasmid.term_id "
+                "  AND plasmid_term.name=\"plasmid\""
+            )
+            where_clause = (
+                f" (entry.taxon_id IN ({entries}) AND is_plasmid.value=0) "
+                f"OR (entry.taxon_id IN ({plasmids_placeholder}) AND is_plasmid.value=1)"
+            )
+        elif search_on=="taxid":
+            where_clause = f"entry.taxon_id IN ({entries})"
         elif search_on=="orthogroup":
-            where_clause = "og.orthogroup"
+            where_clause = f"og.orthogroup IN ({entries})"
         elif search_on=="seqid":
-            where_clause = "feature.seqfeature_id "
+            where_clause = f"feature.seqfeature_id IN ({entries})"
             select       = "SELECT feature.seqfeature_id, og.orthogroup "
             group_by     = ""
             if keep_taxid:
@@ -1504,19 +1528,24 @@ class DB:
         else:
             raise RuntimeError(f"Unsupported search {search_on}, must use orthogroup, bioentry or seqid")
 
-        entries = ",".join("?" for i in lookup_terms)
         query = (
             f"{select} "
             "FROM bioentry AS entry "
-            "INNER JOIN seqfeature AS feature ON entry.bioentry_id = feature.bioentry_id " 
+            "INNER JOIN seqfeature AS feature ON entry.bioentry_id = feature.bioentry_id "
             "INNER JOIN og_hits AS og ON og.seqid = feature.seqfeature_id "
-            f"WHERE {where_clause} IN ({entries}) "
+            f"{add_plasmid_join} "
+            f"WHERE {where_clause} "
             f"{group_by};"
         )
-        results = self.server.adaptor.execute_and_fetchall(query, lookup_terms)
+        all_terms = lookup_terms
+        if not plasmids is None:
+            all_terms = lookup_terms + plasmids
+        results = self.server.adaptor.execute_and_fetchall(query, all_terms)
 
         header = None
-        if search_on=="taxid" or search_on=="orthogroup":
+        if not plasmids is None:
+            header = ["taxid", "plasmid", "orthogroup", "count"]
+        elif search_on=="taxid" or search_on=="orthogroup":
             header = ["taxid", "orthogroup", "count"]
         elif search_on=="seqid":
             header = ["seqid", "orthogroup"]
@@ -1526,8 +1555,10 @@ class DB:
         df = DB.to_pandas_frame(results, header)
         if len(df.index) == 0:
             return df
-
-        if search_on=="taxid" or search_on=="orthogroup":
+        if not plasmids is None:
+            df = df.set_index(["taxid", "plasmid", "orthogroup"]).unstack(level=0, fill_value=0)
+            return df.unstack(level=0, fill_value=0)
+        elif search_on=="taxid" or search_on=="orthogroup":
             df = df.set_index(["taxid", "orthogroup"]).unstack(level=0, fill_value=0)
             df.columns = [col for col in df["count"].columns.values]
         elif search_on=="seqid":
