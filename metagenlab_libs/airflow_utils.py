@@ -97,7 +97,8 @@ def write_snakemake_config_file(analysis_name,
                                 reference_list=False,
                                 scientific_name=False,
                                 check_single_species=False,
-                                reference_docx=False):
+                                reference_docx=False,
+                                additional_args=False):
 
     GEN_DB = gendb_utils.DB()
     
@@ -106,13 +107,18 @@ def write_snakemake_config_file(analysis_name,
 
     run_execution_folder = os.path.join(execution_folder, analysis_name)
     
-    if check_single_species and not scientific_name:
-        species_list = list(set(GEN_DB.get_fastq_id2species(fastq_list.split(",")).values()))
+    species_list = list(set(GEN_DB.get_fastq_id2species(fastq_list.split(",")).values()))
+
     if check_single_species:
         if len(species_list) > 1:
             raise IOError("More than one different species in the dataset: %s" % ','.join(species_list))
-        else:
-            scientific_name = species_list[0]
+
+    # if only one species, set scientific_name
+    # otherwise Mixed
+    if len(species_list) == 1:
+        scientific_name = species_list[0]
+    else:
+        scientific_name = 'Mixed'
     
     # if references, prepare list
     if reference_list:
@@ -132,10 +138,12 @@ def write_snakemake_config_file(analysis_name,
         snakemake_config["local_samples"] = f'{analysis_name}.tsv'
         if reference_list:
             snakemake_config["reference"] = f'{",".join(ref_list)}'
-        if check_single_species:
-            snakemake_config["species"] = f'{scientific_name}'
+        snakemake_config["species"] = f'{scientific_name}'
         if reference_docx:
             snakemake_config["reference_docx"] = f'{reference_docx}'
+        if additional_args:
+            for arg in additional_args:
+                snakemake_config[arg] = additional_args[arg]
 
         documents = yaml.dump(snakemake_config, f)
         
