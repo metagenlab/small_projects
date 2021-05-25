@@ -1479,7 +1479,8 @@ class DB:
     def add_sample_metadata(self, 
                            sample_id,
                            term_name,
-                           value):
+                           value,
+                           update=False):
         '''
         TODO: add option to update on conflict
         [{"sample_id": sample_id,
@@ -1491,8 +1492,22 @@ class DB:
         from GEN.models import SampleMetadata
         term = Term.objects.get_or_create(name=term_name)[0]
 
-        m = SampleMetadata(term=term, sample_id=sample_id, value=value)
-        m.save()
+
+        if not update:
+            m = SampleMetadata(term=term, sample_id=sample_id, value=value)
+            m.save()
+        else:
+            # update value
+            try:
+                m = SampleMetadata.objects.filter(term=term, sample_id=sample_id)[0]
+                # update entry only if necessary
+                if m.value == value:
+                    return
+                m.value = value
+            except:
+                m = SampleMetadata(term=term, sample_id=sample_id, value=value)
+            m.save()
+
 
 
     def get_term2term_id(self, 
@@ -1871,11 +1886,13 @@ class DB:
         # insert data
         for metadata in metadata_list:
             # duplicates will raise error...
-            print(metadata)
-            try:
-                self.add_sample_metadata(sample_id=metadata["sample_id"],
-                                         term_name=metadata["term_name"],
-                                         value=metadata["value"]) 
+            # print(metadata)
+            #try:
+            self.add_sample_metadata(sample_id=metadata["sample_id"],
+                                     term_name=metadata["term_name"],
+                                     value=metadata["value"],
+                                     update=True) 
+            '''
             except IntegrityError as e:
                 if 'UNIQUE' in str(e) or 'Duplicate' in str(e):
                     print(f'UNIQUE constraint failed: {sample_id} -- {metadata["term_name"]} -- {metadata["value"]}')
@@ -1883,6 +1900,7 @@ class DB:
                 else:
                     print("other error")
                     raise
+            '''
 
 
 
