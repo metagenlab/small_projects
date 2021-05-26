@@ -690,7 +690,7 @@ class DB:
 
         if search_on=="taxid":
             df = df.set_index(["taxid", "ko"]).unstack(level=0, fill_value=0)
-            df.columns = [col for col in df["count"].column.values]
+            df.columns = [col for col in df["count"].columns.values]
         elif search_on=="seqid" or search_on=="ko":
             df = df.set_index(["seqid"])
         return df
