@@ -1601,6 +1601,22 @@ class DB:
         return hsh_results
 
 
+    def gen_cog_where_clause(self, search_on, entries):
+        entries = self.gen_placeholder_string(entries)
+
+        if search_on=="bioentry":
+            where_clause = f" entry.bioentry_id IN ({entries}) "
+        elif search_on=="seqid":
+            where_clause = f" hsh.seqid IN ({entries}) "
+        elif search_on=="cog":
+            where_clause = f" cogs.cog_id IN ({entries}) "
+        elif search_on=="taxid":
+            where_clause = f" entry.taxon_id IN ({entries}) "
+        else:
+            raise RuntimeError(f"Searching on {search_on} is not supported")
+        return where_clause
+
+
     # Get all cog hits for a given list of bioentries
     # The results are either indexed by the bioentry or by the seqid
     # NOTE: if indexing as bioentry or taxon_id, will return a dataframe of the form
@@ -1613,20 +1629,10 @@ class DB:
     #   seqid1 cog1
     #   seqid2 cog2
     #   seqid3 cog3
-    def get_cog_hits(self, ids, indexing="bioentry", search_on="bioentry", keep_taxid=False):
-        entries = self.gen_placeholder_string(ids)
+    def get_cog_hits(self, ids, indexing="bioentry", search_on="bioentry",
+            keep_taxid=False, plasmids=None):
 
-        if search_on=="bioentry":
-            where_clause = f" entry.bioentry_id IN ({entries}) "
-        elif search_on=="seqid":
-            where_clause = f" hsh.seqid IN ({entries}) "
-        elif search_on=="cog":
-            where_clause = f" cogs.cog_id IN ({entries}) "
-        elif search_on=="taxid":
-            where_clause = f" entry.taxon_id IN ({entries}) "
-        else:
-            raise RuntimeError(f"Searching on {search_on} is not supported")
-
+        where_clause = self.gen_cog_where_clause(search_on, ids)
         if indexing=="seqid":
             index = "seqid.seqfeature_id"
             if keep_taxid:
@@ -1638,22 +1644,53 @@ class DB:
         else:
             raise RuntimeError(f"Indexing method not supported: {indexing}")
 
+        plasmid_join = ""
+        if not plasmids is None:
+            index += ", CAST(is_plasmid.value AS int) "
+            subclause = self.gen_cog_where_clause(search_on, plasmids)
+            where_clause = (
+                    f"({where_clause} AND is_plasmid.value=0) "
+                    f" OR ({subclause} AND is_plasmid.value=1)"
+            )
+            plasmid_join = (
+                "INNER JOIN bioentry_qualifier_value AS is_plasmid ON "
+                "  is_plasmid.bioentry_id=entry.bioentry_id "
+                "INNER JOIN term AS plasmid_term ON plasmid_term.term_id=is_plasmid.term_id "
+                "  AND plasmid_term.name=\"plasmid\""
+            )
+
         query = (
             f"SELECT {index}, cogs.cog_id, COUNT(*) "
             "FROM bioentry AS entry "
             "INNER JOIN seqfeature AS seqid ON seqid.bioentry_id = entry.bioentry_id "
             "INNER JOIN sequence_hash_dictionnary AS hsh ON seqid.seqfeature_id = hsh.seqid "
             "INNER JOIN cog_hits AS cogs ON cogs.hsh = hsh.hsh "
+            f"{plasmid_join}"
             f"WHERE {where_clause} "
             f"GROUP BY {index}, cogs.cog_id;"
         )
-        results = self.server.adaptor.execute_and_fetchall(query, ids)
+        all_ids = ids
+        if not plasmids is None:
+            all_ids += plasmids
+        results = self.server.adaptor.execute_and_fetchall(query, all_ids)
+
+        # ugly code, open for improvements
         if indexing=="taxid" or indexing=="bioentry":
             column_names = [indexing, "cog", "count"]
+            index = [indexing, "cog"]
+            if not plasmids is None:
+                column_names.insert(1, "plasmid")
+                index.insert(1, "plasmid")
             df = DB.to_pandas_frame(results, column_names)
-            df = df.set_index([indexing, "cog"]).unstack(level=0, fill_value=0)
-            df.columns = [col for col in df["count"].columns.values]
+            df = df.set_index(index).unstack(level=0, fill_value=0)
+
+            if not plasmids is None:
+                return df.unstack(level=0, fill_value=0)
+            else:
+                df.columns = [col for col in df["count"].columns.values]
         elif indexing=="seqid":
+            if not plasmids is None:
+                raise RuntimeError("Not implemented for now")
             header = ["seqid", "cog"]
             if keep_taxid:
                 header.append("taxid")
