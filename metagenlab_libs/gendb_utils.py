@@ -893,7 +893,7 @@ class DB:
         # left join because some fastq won't have match in the sample table
         # possible problem: fastq prefix match with multiple samples from different species
         # in that case: remove species name
-        sql = f'''select distinct t1.id as fastq_id,fastq_prefix,R1,R2,species_name,molis_id, sample_name,t4.run_name from GEN_fastqfiles t1 
+        sql = f'''select distinct t1.id as fastq_id,fastq_prefix,R1,R2,species_name,molis_id, sample_name,t4.run_name,t2.sample_id from GEN_fastqfiles t1 
                 left join GEN_fastqtosample t2 on t1.id=t2.fastq_id
                 left join GEN_sample t3 on t2.sample_id=t3.id
                 inner join GEN_runs t4 on t1.run_id=t4.id
