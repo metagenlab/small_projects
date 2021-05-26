@@ -1175,53 +1175,6 @@ class DB:
         self.load_data_into_table("genome_summary", data)
 
 
-    # Optional arguments: this function will return all cog counts 
-    # grouped by bioentry and cog function, except one of the following argument is passed
-    #  - bioentry_ids : restrict the query to a subset of bioentries
-    #  - taxon_ids : restrict the query to the bioentries whose taxid matches those in this list
-    def get_cog_count_for_genomes(self, bioentry_ids=None, taxon_ids=None):
-        additional_query = ""
-
-        if bioentry_ids != None and taxon_ids != None:
-            raise RuntimeError("For the moment, cannot have both bioentry_ids and taxon_ids")
-
-        if bioentry_ids != None:
-            # to test
-            condition = ", ".join([str(bid) for bid in bioentry_ids])
-            additional_query = f" WHERE entry.bioentry_id IN ({condition}) "
-
-        if taxon_ids != None:
-            # to test
-            condition = ", ".join([str(tid) for tid in taxon_ids])
-            additional_query = (
-                " INNER JOIN taxon AS t ON t.taxon_id = entry.taxon_id "
-                f" WHERE t.ncbi_taxon_id IN ({condition})"
-            )
-
-        query = (
-            "SELECT entry.bioentry_id, cog.function, MIN(hits.evalue)"
-            " FROM cog_hits AS hits "
-            " INNER JOIN sequence_hash_dictionnary AS seq ON seq.hsh = hits.hsh "
-            " INNER JOIN cog_names AS cog ON cog.cog_id = hits.cog_id "
-            " INNER JOIN seqfeature AS fet ON fet.seqfeature_id = seq.seqid "
-            " INNER JOIN bioentry AS entry ON fet.bioentry_id = entry.bioentry_id "
-            f"{additional_query}"
-            " GROUP BY fet.seqfeature_id;"
-        )
-
-        results = self.server.adaptor.execute_and_fetchall(query)
-        hsh_results = {}
-        for line in results:
-            bioentry = line[0]
-            func = line[1]
-            if bioentry in hsh_results:
-                cnt = hsh_results[bioentry].get(func, 0)
-                hsh_results[bioentry][func] = cnt+1
-            else:
-                hsh_results[bioentry] = {func: 1}
-        return hsh_results
-
-
     def get_cog_summaries(self, cog_ids, only_cog_desc=False, as_df=False):
         ids = ",".join(["?"] * len(cog_ids))
         query = (
