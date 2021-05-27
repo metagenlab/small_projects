@@ -1189,7 +1189,7 @@ class DB:
                 hsh_results[line[0]] = (line[1], line[2])
             return hsh_results
         elif only_cog_desc:
-            return DB.to_pandas_frame(results, ["cog", "function", "description"])
+            return DB.to_pandas_frame(results, ["cog", "function", "description"]).set_index(["cog"])
 
         funcs = "SELECT function, description FROM cog_functions;"
         functions = self.server.adaptor.execute_and_fetchall(funcs)
