@@ -1506,8 +1506,13 @@ class DB:
                 m.value = value
             except:
                 m = SampleMetadata(term=term, sample_id=sample_id, value=value)
-            m.save()
-
+            try:
+                m.save()
+            except IntegrityError as e:
+                if 'UNIQUE' in str(e) or 'Duplicate' in str(e):
+                    print(f'UNIQUE constraint failed for sample ID: {sample_id}, no need to update')
+                else:
+                    raise(e)
 
 
     def get_term2term_id(self, 
