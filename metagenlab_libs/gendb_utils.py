@@ -286,9 +286,10 @@ class DB:
         df = pandas.concat([df_fastq, df_samples.reset_index()])
         
         if add_molis:
+            print("add molis!")
             df_molis = self.get_fastq_and_sample_data(df["fastq_id"].to_list()).set_index("fastq_id")
             df = df.set_index("fastq_id").join(df_molis, on="fastq_id", rsuffix='_other', how="left")
-            df = df[["molis_id", "name", "value", "run_name"]]
+            df = df[["molis_id", "sample_name","name", "value", "run_name"]]
 
         return df
 
@@ -786,25 +787,23 @@ class DB:
             res_filter_fastq += f'and t5.subproject_id in ("{metadata_filter}")'   
         
         sql_fastq = f'''
-            select distinct t5.analysis_id,fastq_id, t2.name,t1.value, run_name from GEN_fastqfilesmetadata t1 
+            select distinct t5.analysis_id,fastq_id, t2.name,t1.value, run_name,t4.read_length from GEN_fastqfilesmetadata t1 
             inner join GEN_term t2 on t1.term_id=t2.id 
             inner join GEN_fastqfiles t3 on t1.fastq_id=t3.id 
             inner join GEN_runs t4 on t3.run_id=t4.id 
             left join GEN_projectanalysis t5 on t1.analysis_id=t5.analysis_id
             where t3.fastq_prefix not like "Undetermined%"
             {res_filter_fastq}
-            group by fastq_id, t2.name,t3.fastq_prefix,t4.run_date,t4.run_name,t4.read_length
         '''
         
         sql_sample = f'''
-            select distinct NULL as analysis_id, t3.fastq_id, t2.name,t1.value,run_name from GEN_samplemetadata t1 
+            select distinct NULL as analysis_id, t3.fastq_id, t2.name,t1.value,run_name,t5.read_length from GEN_samplemetadata t1 
             inner join GEN_term t2 on t1.term_id=t2.id 
             inner join GEN_fastqtosample t3 on t1.sample_id=t3.sample_id
             inner join GEN_fastqfiles t4 on t3.fastq_id=t4.id 
             inner join GEN_runs t5 on t4.run_id=t5.id 
             where t4.fastq_prefix not like "Undetermined%"
             {res_filter_sample}
-            group by t3.fastq_id, t2.name,t4.fastq_prefix,t5.run_date,t5.run_name,t5.read_length
             '''
 
         df_fastq = pandas.read_sql(sql_fastq, self.conn)
