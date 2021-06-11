@@ -1717,6 +1717,26 @@ class DB:
         self.cursor.execute(sql,)
         return {i[0]:i[1] for i in self.cursor.fetchall()}
     
+    # get_fastq_id2sample_name
+    # generalisation other columns
+    def get_fastq_id2sample_metadata(self, 
+                                     fastq_list, 
+                                     column_list):
+        '''
+        fastq id to data from GEN_sample table
+        TODO: remove columns from GEN_sample ans store in standard way?
+        '''
+        
+        fastq_list_filter = '","'.join([str(i) for i in fastq_list])
+        columns = ','.join(column_list)
+        sql = f'''select distinct fastq_id,{columns} from GEN_fastqfiles t1 
+              left join GEN_fastqtosample t2 on t1.id=t2.fastq_id
+              left join GEN_sample t3 on t2.sample_id=t3.id 
+              where t1.id in ("{fastq_list_filter}");
+           '''
+        return pandas.read_sql(sql, self.conn).set_index("fastq_id")
+
+    
     def get_fastq_id2sample_name(self, 
                                  fastq_list, 
                                  key_str=True):
