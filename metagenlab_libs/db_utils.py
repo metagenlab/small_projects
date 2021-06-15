@@ -634,64 +634,98 @@ class DB:
         return hsh_results
 
 
-    # NOTE:
-    # All those get_*_hits could be improved in several ways:
-    #  - probably code refactoring: since the code is quite similar
-    #    it may be possible to factor out the redundant code
-    #  - when querying for seqids, two many joins are being performed
-    #    it may be worth it to simplify this
-    def get_ko_hits(self, ids, search_on="taxid", keep_taxid=False):
+    def gen_ko_where_clause(self, search_on, entries):
+        entries = self.gen_placeholder_string(entries)
+        if search_on=="seqid":
+            where_clause = f" hsh.seqid IN ({entries}) "
+        elif search_on=="ko":
+            where_clause = f" hit.ko_id IN ({entries}) "
+        elif search_on=="taxid":
+            where_clause = f" entry.taxon_id IN ({entries}) "
+        else:
+            raise RuntimeError(f"Searching on {search_on} is not supported")
+
+        return where_clause
+
+    def get_ko_hits(self, ids, search_on="taxid",
+            keep_taxid=False, plasmids=None, indexing="taxid"):
         """
         Note: if search_on = ko, only the seqid are returned by default, if the keep_taxids
         is set, taxid are returned in an additional column.
         """
 
-        prot_query = self.gen_placeholder_string(ids)
+        where_clause = self.gen_ko_where_clause(search_on, ids)
 
-        header      = None
-        select      = "SELECT seqid.seqfeature_id, hit.ko_id "
-        group_by    = ""
-        search_term = ""
-        if search_on == "seqid":
-            search_term = "seqid.seqfeature_id"
-            header      = ["seqid", "ko"]
-        elif search_on == "taxid":
-            select      = "SELECT entry.taxon_id, hit.ko_id, COUNT(*) "
-            search_term = "entry.taxon_id"
-            group_by    = "GROUP BY entry.taxon_id, hit.ko_id "
-            header      = ["taxid", "ko", "count"]
-        elif search_on == "ko":
-            search_term = "hit.ko_id"
-            header      = ["seqid", "ko"]
+        header = None
+        select = "SELECT seqid.seqfeature_id, hit.ko_id "
+        group_by = ""
+        if indexing == "seqid":
+            select =  "seqid.seqfeature_id, hit.ko_id "
+            header = ["seqid", "ko"]
+        elif indexing == "taxid":
+            select = "entry.taxon_id, hit.ko_id, COUNT(*) "
+            group_by = "GROUP BY entry.taxon_id, hit.ko_id "
+            header = ["taxid", "ko", "count"]
         else:
-            raise RuntimeError(f"Searching on {search_on} not supported")
+            raise RuntimeError(f"Indexing by {search_on} not supported")
 
-        if keep_taxid and not search_on=="taxid":
+        if keep_taxid and not indexing=="taxid":
             select += ", entry.taxon_id "
             header.append("taxid")
         elif keep_taxid:
             raise RuntimeError(("Are you mocking me? Taxid is already returned! "
                 "Please remove this pesky keep_taxid flag or use another search term!"))
 
+        plasmid_join = ""
+        if not plasmids is None:
+            select += ", CAST(is_plasmid.value AS int) "
+            subclause = self.gen_ko_where_clause(search_on, plasmids)
+            where_clause = (
+                    f"({where_clause} AND is_plasmid.value=0) "
+                    f" OR ({subclause} AND is_plasmid.value=1)"
+            )
+            plasmid_join = (
+                "INNER JOIN bioentry_qualifier_value AS is_plasmid ON "
+                "  is_plasmid.bioentry_id=entry.bioentry_id "
+                "INNER JOIN term AS plasmid_term ON plasmid_term.term_id=is_plasmid.term_id "
+                "  AND plasmid_term.name=\"plasmid\""
+            )
+            if indexing!="seqid":
+                group_by += ", CAST(is_plasmid.value AS int)"
+            header.append("plasmid")
+
         query = (
-            f"{select}"
+            f"SELECT {select}"
             "FROM bioentry AS entry "
             "INNER JOIN seqfeature AS seqid ON seqid.bioentry_id=entry.bioentry_id "
             "INNER JOIN sequence_hash_dictionnary AS hsh ON hsh.seqid = seqid.seqfeature_id "
             "INNER JOIN ko_hits AS hit ON hit.hsh=hsh.hsh "
-            f"WHERE {search_term} IN ({prot_query}) "
+            f"{plasmid_join}"
+            f"WHERE {where_clause} "
             f"{group_by};"
         )
-        results = self.server.adaptor.execute_and_fetchall(query, ids)
+        all_ids = ids
+        if not plasmids is None:
+            all_ids += plasmids
+        results = self.server.adaptor.execute_and_fetchall(query, all_ids)
 
         df = DB.to_pandas_frame(results, header)
         if df.empty:
             return df
 
-        if search_on=="taxid":
-            df = df.set_index(["taxid", "ko"]).unstack(level=0, fill_value=0)
-            df.columns = [col for col in df["count"].columns.values]
-        elif search_on=="seqid" or search_on=="ko":
+        if indexing=="taxid":
+            index = ["taxid", "ko"]
+            if not plasmids is None:
+                index += ["plasmid"]
+            df = df.set_index(index).unstack(level=0, fill_value=0)
+
+            if not plasmids is None:
+                return df.unstack(level=1, fill_value=0)
+            else:
+                if not plasmids is None:
+                    raise RuntimeError("Not implemented yet")
+                df.columns = [col for col in df["count"].columns.values]
+        elif indexing=="seqid":
             df = df.set_index(["seqid"])
         return df
 
