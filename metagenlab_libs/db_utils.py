@@ -1342,7 +1342,7 @@ class DB:
 
     # Returns the seqid, locus tag, protein id, product and gene for a given
     # list of seqids, ordered by seqids
-    def get_proteins_info(self, ids, search_on="seqid"):
+    def get_proteins_info(self, ids, search_on="seqid", as_df=False):
         entries = self.gen_placeholder_string(ids)
         term_names = ["locus_tag", "protein_id", "gene", "product"]
         term_names_query = ",".join(f"\"{name}\"" for name in term_names)
@@ -1370,6 +1370,12 @@ class DB:
             f"WHERE {where} AND t.name IN ({term_names_query});"
         )
         results = self.server.adaptor.execute_and_fetchall(query, ids)
+
+        if as_df:
+            df = DB.to_pandas_frame(results, ["seqid", "name", "value"])
+            df = df.set_index(["seqid", "name"]).unstack(level="name")
+            df.columns = [col for col in df.value.columns.values]
+            return df
 
         hsh_results = {}
         for line in results:
