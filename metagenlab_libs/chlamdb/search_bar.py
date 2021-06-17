@@ -39,7 +39,7 @@ class ChlamdbIndex:
         self.writer.add_document(**kwargs)
 
     def search(self, user_query, limit=10):
-        parser = MultifieldParser(["locus_tag", "gene", "product"], self.index.schema)
+        parser = MultifieldParser(["locus_tag", "gene", "product", "organism", "cog", "ko", "og"], self.index.schema)
         query = parser.parse(user_query)
 
         for result in self.index.searcher().search(query, limit=limit):
