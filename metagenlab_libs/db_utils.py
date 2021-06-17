@@ -1339,32 +1339,37 @@ class DB:
             hsh_results[seqid] = [strand, start, end]
         return hsh_results
     
+
     # Returns the seqid, locus tag, protein id, product and gene for a given
     # list of seqids, ordered by seqids
-    #
-    # WARNING: fam_cog relies on the result being ordered by seqfeature_id
-    def get_proteins_info(self, seqids, bioentries=None):
-        seqids_query = ",".join(["?"] * len(seqids))
+    def get_proteins_info(self, ids, search_on="seqid"):
+        entries = self.gen_placeholder_string(ids)
         term_names = ["locus_tag", "protein_id", "gene", "product"]
-        term_names_query = ",".join([f"\"{name}\"" for name in term_names])
+        term_names_query = ",".join(f"\"{name}\"" for name in term_names)
 
-        if bioentries!=None:
-            entries = ",".join(str(entry) for entry in bioentries)
+        where = ""
+        if search_on=="taxid":
             sel = (
-                f"INNER JOIN seqfeature AS seq ON seq.seqfeature_id = v.seqfeature_id "
-                f" AND seq.bioentry_id IN ({entries}) "
+                "INNER JOIN bioentry AS entry ON seq.bioentry_id=entry.bioentry_id "
             )
-        else:
+            where = f" entry.taxon_id IN ({entries})"
+        elif search_on=="seqid":
             sel = ""
+            where = f"v.seqfeature_id IN ({entries})"
+        else:
+            raise RuntimeError("Searching is only possible on seqid and taxid")
+
         query = (
             "SELECT v.seqfeature_id, t.name, v.value "
             "FROM seqfeature_qualifier_value AS v "
             "INNER JOIN term AS t ON t.term_id = v.term_id "
+            "INNER JOIN seqfeature AS seq ON seq.seqfeature_id = v.seqfeature_id "
+            "INNER JOIN term AS cds_term ON seq.type_term_id=cds_term.term_id "
+            " AND cds_term.name=\"CDS\" "
             f"{sel}"
-            f"WHERE v.seqfeature_id IN ({seqids_query}) AND name IN ({term_names_query}) "
-            "ORDER BY v.seqfeature_id ASC;"
+            f"WHERE {where} AND t.name IN ({term_names_query});"
         )
-        results = self.server.adaptor.execute_and_fetchall(query, seqids)
+        results = self.server.adaptor.execute_and_fetchall(query, ids)
 
         hsh_results = {}
         for line in results:
@@ -1375,6 +1380,7 @@ class DB:
                 hsh_results[seqid] = [None]*len(term_names)
             hsh_results[seqid][term_names.index(term_name)] = value
         return hsh_results
+
 
     def get_organism(self, ids, as_hash=True, id_type="seqid"):
         seqids_query = ",".join(["?"] * len(ids))
