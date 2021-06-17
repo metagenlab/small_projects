@@ -83,7 +83,7 @@ def write_sample_file(gen_db_path,
             R2 = row["R2"]
             fastq_id = row["fastq_id"]
             species = row["species_name"]
-            sample_name = f'{row["fastq_prefix"]}_{fastq_id}'
+            sample_name = f'{row["sample_name"]}_{fastq_id}'
             f.write(f"{sample_name}\t{species}\t{R1}\t{R2}\t{fastq_id}\n")
             
             
@@ -128,7 +128,8 @@ def write_snakemake_config_file(analysis_name,
         ref_list = []
         for n, row in fastq_df.iterrows():
             fastq_id = row["fastq_id"]
-            sample_name = f'{row["fastq_prefix"]}_{fastq_id}'
+            
+            sample_name = f'{row["sample_name"]}_{fastq_id}'
             ref_list.append(sample_name)
         if 'cgMLST' in reference_fastq_list:
             ref_list.append("cgMLST")
