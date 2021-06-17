@@ -9,13 +9,17 @@ from whoosh import index
 
 
 class SearchBarSchema(SchemaClass):
-    seqid = ID(stored=True)
     locus_tag = KEYWORD(stored=True)
     gene = KEYWORD(stored=True)
     product = TEXT(stored=True)
+    organism = TEXT(stored=True)
+    cog = KEYWORD(stored=True)
+    ko = KEYWORD(stored=True)
+    og = KEYWORD(stored=True)
 
 
-SearchResult = namedtuple("SearchResult", ["seqid", "locus_tag", "gene", "product"])
+SearchResult = namedtuple("SearchResult",
+        ["locus_tag", "gene", "product", "organism", "cog", "ko", "og"])
 
 
 class ChlamdbIndex:
@@ -42,8 +46,12 @@ class ChlamdbIndex:
             gene = result.get("gene", None)
             locus_tag = result.get("locus_tag", None)
             product = result.get("product", None)
-            seqid = result.get("seqid", None)
-            yield SearchResult(seqid=int(seqid), locus_tag=locus_tag, gene=gene, product=product)
+            organism = result.get("organism", None)
+            cog = result.get("cog", None)
+            ko = result.get("ko", None)
+            og = result.get("og", None)
+            yield SearchResult(locus_tag=locus_tag, gene=gene, product=product,
+                    organism=organism, cog=cog, ko=ko, og=og)
 
     def done_adding(self):
         self.writer.commit(optimize=True)
