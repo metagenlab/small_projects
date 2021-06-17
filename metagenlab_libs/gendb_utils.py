@@ -240,7 +240,7 @@ class DB:
             res_filter_sample += f' and t1.value in ("{metadata_filter}")'
         if analysis_id_list:
             metadata_filter = '","'.join(analysis_id_list)
-            res_filter_fastq += f' and t1.analysis_id in ("{metadata_filter}")'
+            res_filter_fastq += f' and (t1.analysis_id in ("{metadata_filter}") OR t1.analysis_id is NULL)'
             res_filter_sample += f' and t6.analysis_id in ("{metadata_filter}")'    
         if subproject_id_list:
             metadata_filter = '","'.join(subproject_id_list)
@@ -781,7 +781,7 @@ class DB:
             res_filter_sample += f'and t1.value in ("{metadata_filter}")'
         if analysis_id_list:
             metadata_filter = '","'.join(analysis_id_list)
-            res_filter_fastq += f'and t1.analysis_id in ("{metadata_filter}")'        
+            res_filter_fastq += f'and (t1.analysis_id in ("{metadata_filter}") OR t1.analysis_id is NULL)'        
         if subproject_id_list:
             metadata_filter = '","'.join(subproject_id_list)
             res_filter_fastq += f'and t5.subproject_id in ("{metadata_filter}")'   
@@ -805,7 +805,7 @@ class DB:
             where t4.fastq_prefix not like "Undetermined%"
             {res_filter_sample}
             '''
-
+        print(sql_fastq)
         df_fastq = pandas.read_sql(sql_fastq, self.conn)
         df_samples = pandas.read_sql(sql_sample, self.conn).set_index("fastq_id")
         
