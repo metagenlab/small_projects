@@ -16,13 +16,14 @@ class SearchBarSchema(SchemaClass):
     cog = KEYWORD(stored=True)
     ko = KEYWORD(stored=True)
     og = KEYWORD(stored=True)
+    pfam = KEYWORD(stored=True)
 
 
-SearchResult = namedtuple("SearchResult",
-        ["locus_tag", "gene", "product", "organism", "cog", "ko", "og"])
+SearchResult = namedtuple("SearchResult", ChlamdbIndex.Field_list)
 
 
 class ChlamdbIndex:
+    Field_list = ["locus_tag", "gene", "product", "organism", "cog", "ko", "og", "pfam"]
 
     def new_index(name):
         chlamdb_index = ChlamdbIndex()
@@ -39,7 +40,7 @@ class ChlamdbIndex:
         self.writer.add_document(**kwargs)
 
     def search(self, user_query, limit=10):
-        parser = MultifieldParser(["locus_tag", "gene", "product", "organism", "cog", "ko", "og"], self.index.schema)
+        parser = MultifieldParser(ChlamdbIndex.Field_list, self.index.schema)
         query = parser.parse(user_query)
 
         for result in self.index.searcher().search(query, limit=limit):
@@ -50,8 +51,9 @@ class ChlamdbIndex:
             cog = result.get("cog", None)
             ko = result.get("ko", None)
             og = result.get("og", None)
+            pfam = result.get("pfam", None)
             yield SearchResult(locus_tag=locus_tag, gene=gene, product=product,
-                    organism=organism, cog=cog, ko=ko, og=og)
+                    organism=organism, cog=cog, ko=ko, og=og, pfam=pfam)
 
     def done_adding(self):
         self.writer.commit(optimize=True)

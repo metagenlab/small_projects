@@ -1683,6 +1683,8 @@ class DB:
             raise RuntimeError(f"Searching on {search_on} is not supported")
         return where_clause
 
+    def get_pfam_hits(self, ):
+
 
     # Get all cog hits for a given list of bioentries
     # The results are either indexed by the bioentry or by the seqid

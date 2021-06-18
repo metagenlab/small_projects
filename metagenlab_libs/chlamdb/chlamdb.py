@@ -65,8 +65,7 @@ def create_data_table(db):
         ("priam_comparative_accession", "optional", False),
         ("COG", "optional", False),
         ("KEGG", "optional", False),
-        ("pfam_comparative", "optional", False),
-        ("pfam_comparative_accession", "optional", False),       
+        ("pfam", "optional", False),
         ("TCDB_data", "optional", False),
         ("psortb_data", "optional", False),
         ("T3SS_data", "optional", False),
@@ -79,7 +78,6 @@ def create_data_table(db):
         ("phylogenetic_profile", "optional", False),
         ("synonymous_table", "optional", False),
         ("interpro_taxonomy", "optional", False), # interpro taxnonomy statistics
-        ("pfam_taxonomy", "optional", False), #  taxnonomy statistics
         ("COG_taxonomy", "optional", False) # COG taxnonomy statistics
     ]
     db.load_chlamdb_config_tables(entry_list)
