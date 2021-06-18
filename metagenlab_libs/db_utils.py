@@ -419,6 +419,27 @@ class DB:
         )
         self.server.adaptor.execute(sql)
 
+    def create_pfam_def_table(self, entries):
+        sql = (
+            "CREATE TABLE pfam_table( "
+            "pfam_id INTEGER, definition TEXT, "
+            "PRIMARY KEY(pfam_id));"
+        )
+        self.server.adaptor.execute(sql)
+        self.load_data_into_table("pfam_table", entries)
+        sql = "CREATE INDEX pfam_table_idx ON pfam_table(pfam_id);"
+        self.server.adaptor.execute(sql)
+
+    def create_pfam_hits_table(self):
+        sql = (
+            "CREATE TABLE pfam_hits( "
+            "hsh INTEGER, pfam_id INTEGER, start INTEGER, end INTEGER,"
+            "PRIMARY KEY(hsh, pfam_id, start, end) "
+            ");"
+        )
+        self.server.adaptor.execute(sql)
+        sql = "CREATE INDEX pfam_hits_idx ON pfam_hits(hsh);"
+        self.server.adaptor.execute(sql)
 
     def get_all_modules_definition(self, allow_signature=False):
         where = ""
