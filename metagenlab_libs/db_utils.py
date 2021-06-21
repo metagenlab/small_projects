@@ -1701,6 +1701,18 @@ class DB:
         return where_clause
 
 
+    def get_pfam_hits_info(self, seqids):
+        plcd = self.gen_placeholder_string(seqids)
+        query = (
+            "SELECT hsh.seqid, pfam.pfam_id, pfam.start, pfam.end "
+            "FROM sequence_hash_dictionnary AS hsh "
+            "INNER JOIN pfam_hits AS pfam ON hsh.hsh=pfam.hsh "
+            f"WHERE hsh.seqid IN ({plcd});"
+        )
+        results = self.server.adaptor.execute_and_fetchall(query, seqids)
+        return DB.to_pandas_frame(results, ["seqid", "pfam", "start", "end"])
+
+
     def get_pfam_hits(self, ids, indexing="taxid", search_on="taxid", plasmids=None, keep_taxid=False):
 
         where_clause = self.gen_pfam_where_clause(search_on, ids)
