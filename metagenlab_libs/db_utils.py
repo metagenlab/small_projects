@@ -427,7 +427,9 @@ class DB:
         )
         self.server.adaptor.execute(sql)
         self.load_data_into_table("pfam_table", entries)
-        sql = "CREATE INDEX pfam_table_idx ON pfam_table(pfam_id);"
+        sql = (
+            "CREATE INDEX pfam_table_idx ON pfam_table(pfam_id);"
+        )
         self.server.adaptor.execute(sql)
 
     def create_pfam_hits_table(self):
@@ -438,7 +440,10 @@ class DB:
             ");"
         )
         self.server.adaptor.execute(sql)
-        sql = "CREATE INDEX pfam_hits_idx ON pfam_hits(hsh);"
+        sql = (
+            "CREATE INDEX pfam_hits_idx ON pfam_hits(hsh);"
+            "CREATE INDEX pfam_hits_pfam ON pfam_hits(pfam_id)"
+        )
         self.server.adaptor.execute(sql)
 
     def get_all_modules_definition(self, allow_signature=False):
@@ -1668,6 +1673,91 @@ class DB:
         return hsh_results
 
 
+    def get_pfam_def(self, pfam_ids):
+        plcd = self.gen_placeholder_string(pfam_ids)
+
+        query = (
+            "SELECT pfam_id, definition "
+            "FROM pfam_table "
+            f"WHERE pfam_id IN ({plcd});"
+        )
+        results = self.server.adaptor.execute_and_fetchall(query, pfam_ids)
+        return DB.to_pandas_frame(results, ["pfam", "def"]).set_index(["pfam"])
+
+
+    def gen_pfam_where_clause(self, search_on, entries):
+        entries = self.gen_placeholder_string(entries)
+
+        if search_on=="bioentry":
+            where_clause = f" entry.bioentry_id IN ({entries}) "
+        elif search_on=="seqid":
+            where_clause = f" hsh.seqid IN ({entries}) "
+        elif search_on=="pfam":
+            where_clause = f" pfam.pfam_id IN ({entries}) "
+        elif search_on=="taxid":
+            where_clause = f" entry.taxon_id IN ({entries}) "
+        else:
+            raise RuntimeError(f"Searching on {search_on} is not supported")
+        return where_clause
+
+
+    def get_pfam_hits(self, ids, indexing="taxid", search_on="taxid", plasmids=None, keep_taxid=False):
+
+        where_clause = self.gen_pfam_where_clause(search_on, ids)
+        if indexing=="seqid":
+            index = "seqid.seqfeature_id"
+            if keep_taxid:
+                index += ", entry.taxon_id "
+        elif indexing=="bioentry":
+            index = "entry.bioentry_id"
+        elif indexing=="taxid":
+            index = "entry.taxon_id"
+        else:
+            raise RuntimeError(f"Indexing method not supported: {indexing}")
+        plasmid_join = ""
+
+        query = (
+            f"SELECT {index}, pfam.pfam_id, COUNT(*) "
+            "FROM bioentry AS entry "
+            "INNER JOIN seqfeature AS seqid ON seqid.bioentry_id = entry.bioentry_id "
+            "INNER JOIN sequence_hash_dictionnary AS hsh ON seqid.seqfeature_id = hsh.seqid "
+            "INNER JOIN pfam_hits AS pfam ON pfam.hsh = hsh.hsh "
+            f"{plasmid_join}"
+            f"WHERE {where_clause} "
+            f"GROUP BY {index}, pfam.pfam_id;"
+        )
+        all_ids = ids
+        if not plasmids is None:
+            all_ids += plasmids
+        results = self.server.adaptor.execute_and_fetchall(query, all_ids)
+
+        if indexing=="taxid" or indexing=="bioentry":
+            column_names = [indexing, "pfam", "count"]
+            index = [indexing, "pfam"]
+            if not plasmids is None:
+                column_names.insert(1, "plasmid")
+                index.insert(1, "plasmid")
+            df = DB.to_pandas_frame(results, column_names)
+            df = df.set_index(index).unstack(level=0, fill_value=0)
+
+            if not plasmids is None:
+                return df.unstack(level=0, fill_value=0)
+            else:
+                df.columns = [col for col in df["count"].columns.values]
+        elif indexing=="seqid":
+            if not plasmids is None:
+                raise RuntimeError("Not implemented for now")
+            header = ["seqid", "pfam"]
+            if keep_taxid:
+                header.append("taxid")
+                results = ((seqid, pfam, taxid) for seqid, taxid, pfam, count in results)
+            else:
+                results = ((seqid, pfam) for seqid, pfam, count in results)
+            df = DB.to_pandas_frame(results, header)
+            df = df.set_index(["seqid"])
+        return df
+
+
     def gen_cog_where_clause(self, search_on, entries):
         entries = self.gen_placeholder_string(entries)
 
@@ -1682,8 +1772,6 @@ class DB:
         else:
             raise RuntimeError(f"Searching on {search_on} is not supported")
         return where_clause
-
-    def get_pfam_hits(self, ):
 
 
     # Get all cog hits for a given list of bioentries

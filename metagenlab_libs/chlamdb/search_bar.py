@@ -19,11 +19,11 @@ class SearchBarSchema(SchemaClass):
     pfam = KEYWORD(stored=True)
 
 
-SearchResult = namedtuple("SearchResult", ChlamdbIndex.Field_list)
+field_list = ["locus_tag", "gene", "product", "organism", "cog", "ko", "og", "pfam"]
+SearchResult = namedtuple("SearchResult", field_list)
 
 
 class ChlamdbIndex:
-    Field_list = ["locus_tag", "gene", "product", "organism", "cog", "ko", "og", "pfam"]
 
     def new_index(name):
         chlamdb_index = ChlamdbIndex()
@@ -40,10 +40,11 @@ class ChlamdbIndex:
         self.writer.add_document(**kwargs)
 
     def search(self, user_query, limit=10):
-        parser = MultifieldParser(ChlamdbIndex.Field_list, self.index.schema)
+        parser = MultifieldParser(field_list, self.index.schema)
         query = parser.parse(user_query)
 
         for result in self.index.searcher().search(query, limit=limit):
+            # Not pythonic, should be refactored
             gene = result.get("gene", None)
             locus_tag = result.get("locus_tag", None)
             product = result.get("product", None)
