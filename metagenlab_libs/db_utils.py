@@ -1672,6 +1672,62 @@ class DB:
                 hsh_results[entry_id][func] = cnt+1
         return hsh_results
 
+    #################
+    # circos data
+    #################
+    def get_bioentry_list(self, taxon_id, min_bioentry_length=1000):
+        
+        query = (
+            "select t2.bioentry_id,t1.accession,length " 
+            "from bioentry t1 "
+            "inner join biosequence t2 on t1.bioentry_id =t2.bioentry_id "
+            f"where t1.taxon_id = {taxon_id} and length > {min_bioentry_length} "
+        )
+        
+        results = self.server.adaptor.execute_and_fetchall(query,)
+        return DB.to_pandas_frame(results, ["bioentry_id", "accession" ,"length"]).set_index(["bioentry_id"])
+    
+    def get_features_location(self, taxon_id):
+        
+        query = (
+            "select t1.bioentry_id, t2.seqfeature_id,t5.start_pos, t5.end_pos, t5.strand from bioentry t1 "
+            "inner join seqfeature t2 on t1.bioentry_id = t2.bioentry_id "
+            "inner join term t4 on t2.type_term_id = t4.term_id "
+            "inner join location t5 on t2.seqfeature_id = t5.seqfeature_id "
+            f"where t1.taxon_id= {taxon_id} and t4.name='CDS'"
+        )
+        
+        results = self.server.adaptor.execute_and_fetchall(query,)
+        return DB.to_pandas_frame(results, ["bioentry_id", "seqfeature_id", "start_pos", "end_pos", "strand"]).set_index(["bioentry_id", "seqfeature_id"])
+        
+    def get_identity_closest_homolog(self, reference_taxid, target_taxids):
+        
+        targets = ','.join([str(i) for i in target_taxids])
+        query = (
+        "select t1.id_1, t1.id_2, t1.\"identity\", t5.taxon_id from orthology_identity t1 "
+        "inner join seqfeature t2 on t1.id_1=t2.seqfeature_id " 
+        "inner join seqfeature t3 on t1.id_2=t3.seqfeature_id " 
+        "inner join bioentry t4 on t2.bioentry_id = t4.bioentry_id " 
+        "inner join bioentry t5 on t3.bioentry_id = t5.bioentry_id "
+        f"where t4.taxon_id = {reference_taxid} and t5.taxon_id in ({targets}) and t4.taxon_id != t5.taxon_id " 
+        "UNION "
+        "select t1.id_2, t1.id_1, t1.\"identity\", t4.taxon_id from orthology_identity t1 "
+        "inner join seqfeature t2 on t1.id_1=t2.seqfeature_id "
+        "inner join seqfeature t3 on t1.id_2=t3.seqfeature_id "
+        "inner join bioentry t4 on t2.bioentry_id = t4.bioentry_id " 
+        "inner join bioentry t5 on t3.bioentry_id = t5.bioentry_id "
+        f"where t4.taxon_id in ({targets}) and t5.taxon_id = {reference_taxid} and t4.taxon_id != t5.taxon_id " 
+        )
+        
+        results = self.server.adaptor.execute_and_fetchall(query,)
+        df = DB.to_pandas_frame(results, ["seqfeature_id_1", "seqfeature_id_2", "identity", "target_taxid"])
+        # keep homolog with the highest identity
+        #df_pivot = df.pivot_table(index=["seqfeature_id_1"], columns="target_taxid",values="identity", aggfunc=lambda x: max(x))
+        return df
+    
+    #################
+    
+    
 
     def get_pfam_def(self, pfam_ids):
         plcd = self.gen_placeholder_string(pfam_ids)
