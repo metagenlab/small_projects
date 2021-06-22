@@ -1319,18 +1319,19 @@ class DB:
         return values[0][0]
 
 
-    def get_seqid_in_neighborhood(self, bioentry_id, start_loc, stop_loc):
+    def get_seqid_in_neighborhood(self, seqid, start, stop):
+        query_params = [seqid, start, stop]
         query = (
-            "SELECT seqfeature_id "
-            "FROM location AS loc " 
-            "INNER JOIN seqfeature AS seq ON seq.seqfeature_id=loc.seqfeature_id "
-            "  AND seq.bioentry_id= ? "
-            "WHERE loc.start_pos > ? AND loc.start_pos < ?;"
+            "SELECT fet.seqfeature_id, loc.start_pos, loc.end_pos, loc.strand "
+            "FROM bioentry AS contig "
+            "INNER JOIN seqfeature AS fet ON contig.bioentry_id=fet.bioentry_id "
+            "INNER JOIN location AS loc ON loc.seqfeature_id=fet.seqfeature_id "
+            "INNER JOIN seqfeature AS initial_fet ON contig.bioentry_id=initial_fet.bioentry_id "
+            "   AND initial_fet.seqfeature_id=? "
+            "WHERE (loc.start_pos > ? AND loc.end_pos<?);"
         )
-        results = self.server.execute_and_fetchall(query, [bioentry_id, start_pos, stop_loc])
-        if results==None:
-            return []
-        return [line[0] for line in results]
+        results = self.server.adaptor.execute_and_fetchall(query, query_params)
+        return DB.to_pandas_frame(results, ["seqid", "start", "end", "strand"]).set_index(["seqid"])
 
 
     def get_DNA_sequence(self, bioentry_id, alphabet="dna"):
@@ -1366,12 +1367,46 @@ class DB:
         return hsh_results
     
 
+    def get_CDS_type(self, ids):
+        plchd = self.gen_placeholder_string(ids)
+
+        query = (
+            "SELECT fet.seqfeature_id, type.name "
+            "FROM seqfeature AS fet "
+            "INNER JOIN term AS type ON type.term_id=fet.type_term_id "
+            f"WHERE fet.seqfeature_id IN ({plchd});"
+        )
+        results = self.server.adaptor.execute_and_fetchall(query, ids)
+        return DB.to_pandas_frame(results, ["seqid", "type"]).set_index(["seqid"])
+
+
     # Returns the seqid, locus tag, protein id, product and gene for a given
-    # list of seqids, ordered by seqids
-    def get_proteins_info(self, ids, search_on="seqid", as_df=False):
+    # list of seqids
+    def get_proteins_info(self, ids, search_on="seqid", as_df=False,
+            to_return=None, inc_non_CDS=False):
+        """
+        Args:
+         - to_return: accepts a list of entries to return for each seqid.
+                Allowed: locus_tag, protein_id, gene and product
+        """
         entries = self.gen_placeholder_string(ids)
-        term_names = ["locus_tag", "protein_id", "gene", "product"]
+
+        if to_return is None:
+            term_names = ["locus_tag", "protein_id", "gene", "product"]
+        else:
+            term_names = to_return
+            for term_name in to_return:
+                if term_name not in ["locus_tag", "protein_id", "gene", "product"]:
+                    raise RuntimeError(f"Value not support {term_name}")
+
         term_names_query = ",".join(f"\"{name}\"" for name in term_names)
+
+        add_cond = ""
+        if inc_non_CDS:
+            add_cond = (
+                "OR cds_term.name=\"tRNA\" OR cds_term.name=\"tmRNA\" "
+                "OR cds_term.name=\"rRNA\""
+            )
 
         where = ""
         if search_on=="taxid":
@@ -1391,7 +1426,7 @@ class DB:
             "INNER JOIN term AS t ON t.term_id = v.term_id "
             "INNER JOIN seqfeature AS seq ON seq.seqfeature_id = v.seqfeature_id "
             "INNER JOIN term AS cds_term ON seq.type_term_id=cds_term.term_id "
-            " AND cds_term.name=\"CDS\" "
+            f" AND (cds_term.name=\"CDS\" {add_cond})"
             f"{sel}"
             f"WHERE {where} AND t.name IN ({term_names_query});"
         )
