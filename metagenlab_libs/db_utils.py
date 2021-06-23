@@ -1286,20 +1286,31 @@ class DB:
         return ret[0][0]
 
 
-    def get_seqid(self, locus_tag):
+    def get_seqid(self, locus_tag, feature_type=False):
+        add_type = ""
+        sel = "AND cds_term.name=\"CDS\""
+        if feature_type:
+            add_type = ", cds_term.name"
+            sel = (
+                "AND (cds_term.name=\"CDS\" OR cds_term.name=\"tRNA\" "
+                " OR cds_term.name=\"tmRNA\" OR cds_term.name=\"rRNA\") "
+            )
+
         query = (
-            "SELECT locus_tag.seqfeature_id "
+            f"SELECT locus_tag.seqfeature_id {add_type} "
             "FROM seqfeature_qualifier_value AS locus_tag "
             "INNER JOIN seqfeature AS cds "
             " ON cds.seqfeature_id=locus_tag.seqfeature_id "
             "INNER JOIN term AS cds_term ON cds_term.term_id=cds.type_term_id "
-            " AND cds_term.name=\"CDS\""
+            f" {sel}"
             "WHERE locus_tag.value = ?;"
         )
 
         values =  self.server.adaptor.execute_and_fetchall(query, [locus_tag,])
         if len(values)==0:
             raise RuntimeError("No such entry")
+        if feature_type:
+            return values[0]
         return values[0][0]
 
     
