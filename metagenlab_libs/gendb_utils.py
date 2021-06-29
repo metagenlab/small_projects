@@ -1170,6 +1170,7 @@ class DB:
     def searchdb(self, term, search_type="exact_match"):
 
         if search_type=="exact_match":
+            print("TEST")
             # search sample table 
             # sample_name, xlsx_sample_id, molis_id
             sql_sample = f'''select t1.id,t2.fastq_id,sample_name, xlsx_sample_id, molis_id from GEN_sample t1 
@@ -1204,16 +1205,20 @@ class DB:
 
             nr_fastq_list =  [str(i) for i in set(nr_fastq_list)]
 
-            detail_df = self.get_fastq_and_sample_data(nr_fastq_list)[["fastq_id","fastq_prefix","run_name","species_name","molis_id", "sample_name"]]
+            detail_df = self.get_fastq_and_sample_data(nr_fastq_list)[["fastq_id","fastq_prefix","run_name","species_name","molis_id", "sample_name"]].set_index("fastq_id")
 
             if not hits_sample_metadata_df.empty:
+                print("not empty!")
                 # add metadata to detail_df
-                detail_df = detail_df.set_index("fastq_id").join(hits_sample_metadata_df.set_index("fastq_id"))
+                detail_df = detail_df.join(hits_sample_metadata_df.set_index("fastq_id"))
             if not hits_fastq_metadata_df.empty:
-                if 'fastq_id' in detail_df.columns:
-                    detail_df = detail_df.set_index("fastq_id").join(hits_fastq_metadata_df[["fastq_id", "value", "name"]].set_index("fastq_id"))
-                else:
-                    detail_df = detail_df.join(hits_fastq_metadata_df[["fastq_id", "value", "name"]].set_index("fastq_id"), rsuffix='r')
+                print("not empty 2!")
+                #if 'fastq_id' in detail_df.columns:
+                print("fastq ID!!!!!!!!!!")
+                detail_df = detail_df.join(hits_fastq_metadata_df[["fastq_id", "value", "name"]].set_index("fastq_id"))
+                #else:
+                #    print('NO fastq IDs!!!!!!!')
+                #    detail_df = detail_df.join(hits_fastq_metadata_df[["fastq_id", "value", "name"]].set_index("fastq_id"), rsuffix='r')
             
 
             nr_fastq_list_filter = ','.join(nr_fastq_list)
