@@ -49,6 +49,29 @@ def make_run_dir(execution_folder,
     
     return folder_name
 
+
+def backup_output_files(metadata_name2path_template, 
+                        fastq_list,
+                        execution_folder,
+                        analysis_name,
+                        pipeline_version):
+    GEN_DB = gendb_utils.DB()
+    
+    fastq_df = GEN_DB.get_fastq_and_sample_data(fastq_list)   
+    
+    qc_data = [] 
+    for metadata_name in metadata_name2path_template:
+        path_template = metadata_name2path_template[metadata_name]
+        for n, sample in fastq_df.iterrows():
+            sample_name = f'{sample["sample_name"]}_{sample["fastq_id"]}'
+            path = path_template.format(analysis_name=analysis_name,sample=sample_name) 
+
+            qc_data.append({"fastq_id": sample["fastq_id"],
+                            "metrics_name": metadata_name,
+                            "metrics_value": path,
+                            "pipeline_version": pipeline_version})
+    return qc_data
+
 def write_sample_file(gen_db_path,
                       fastq_list,
                       analysis_name, 
