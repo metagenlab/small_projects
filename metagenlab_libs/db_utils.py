@@ -1698,7 +1698,15 @@ class DB:
         )
         
         results = self.server.adaptor.execute_and_fetchall(query,)
-        return DB.to_pandas_frame(results, ["bioentry_id", "seqfeature_id", "start_pos", "end_pos", "strand"]).set_index(["bioentry_id", "seqfeature_id"])
+        
+        df = DB.to_pandas_frame(results, ["bioentry_id", "seqfeature_id", "start_pos", "end_pos", "strand"])
+        
+        df_annotations = self.get_proteins_info(df["seqfeature_id"].to_list(), as_df=True)
+
+        # bioentry_id  start_pos  end_pos  strand  gene       locus_tag                             product
+        df_merged = df.set_index(["seqfeature_id"]).join(df_annotations.reset_index().set_index(["seqid"])).reset_index()[["seqfeature_id", "bioentry_id", "start_pos", "end_pos", "strand", "gene", "locus_tag", "product"]]
+    
+        return df_merged
         
     def get_identity_closest_homolog(self, reference_taxid, target_taxids):
         
