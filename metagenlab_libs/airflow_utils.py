@@ -50,11 +50,10 @@ def make_run_dir(execution_folder,
     return folder_name
 
 
-def backup_output_files(metadata_name2path_template, 
-                        fastq_list,
-                        execution_folder,
-                        analysis_name,
-                        pipeline_version):
+def backup_output_files_samples(metadata_name2path_template, 
+                                fastq_list,
+                                analysis_name,
+                                pipeline_version):
     GEN_DB = gendb_utils.DB()
     
     fastq_df = GEN_DB.get_fastq_and_sample_data(fastq_list)   
@@ -71,6 +70,24 @@ def backup_output_files(metadata_name2path_template,
                             "metrics_value": path,
                             "pipeline_version": pipeline_version})
     return qc_data
+
+
+def backup_output_files_analysis(metadata_name2path_template, 
+                                 analysis_name,
+                                 analysis_id,
+                                 pipeline_version):
+    
+    # save pipeline version
+    gendb_utils.add_analysis_metadata(analysis_id, 
+                                      "snakemake_pipeline_version", 
+                                      pipeline_version, 
+                                      update=True)
+
+    for metadata in metadata_name2path_template:
+        gendb_utils.add_analysis_metadata(analysis_id, 
+                                          metadata, 
+                                          metadata_name2path_template[metadata].format(analysis_name=analysis_name), 
+                                          update=True)
 
 def write_sample_file(gen_db_path,
                       fastq_list,
@@ -176,7 +193,7 @@ def backup(execution_folder,
            backup_folder,
            file_or_folder_list,
            analysis_id=False,
-           analysis_metadata={}):
+           analysis_name=False):
     
     '''
     Analysis name: folder within execution_folder (generally execution date)
@@ -186,7 +203,7 @@ def backup(execution_folder,
     '''
     
     import shutil
-    
+    import glob
     if analysis_id:
         # update status
         print("analysis_id", analysis_id)
@@ -194,32 +211,32 @@ def backup(execution_folder,
 
     
     for output in file_or_folder_list:
-        original = os.path.join(execution_folder, output)
-        target = os.path.join(backup_folder, output)
-        print("original", original)
-        print("target", target)
-        if os.path.isdir(original):
-            shutil.rmtree(target, ignore_errors=True)
-            shutil.copytree(original, target)
-        if os.path.isfile(original): 
-            if os.path.exists(target):
-                os.remove(target)
-            shutil.rmtree(target, ignore_errors=True)
-            shutil.copy(original, target)
+        
+        if isinstance(output, list):
+            target_dir = os.path.join(backup_folder, output[1])
+            file_list = glob.glob(os.path.join(execution_folder, output[0]))
+            print("file_list", file_list)
+            if not os.path.exists(target_dir):
+                os.mkdir(target_dir)
+            for one_file in file_list:
+                print("original", one_file)
+                print("target_dir", target_dir)
+                shutil.copy(one_file, target_dir)
+        else:
+            output = output.format(analysis_name=analysis_name)
+            original = os.path.join(execution_folder, output)
+            target = os.path.join(backup_folder, output)
+            print("original", original)
+            print("target", target)
+            if os.path.isdir(original):
+                shutil.rmtree(target, ignore_errors=True)
+                shutil.copytree(original, target)
+            if os.path.isfile(original): 
+                if os.path.exists(target):
+                    os.remove(target)
+                shutil.rmtree(target, ignore_errors=True)
+                shutil.copy(original, target)
     
-    if analysis_metadata:
-        for status_entry in analysis_metadata:
-
-            if status_entry == 'snakemake_pipeline_version':
-                # replace by content of the file
-                with open(os.path.join(analysis_metadata[status_entry]["value"]), 'r') as f:
-                    pipeline_version = f.readline().strip().split(" ")[-1]
-                    analysis_metadata[status_entry]["value"] = pipeline_version
-
-            gendb_utils.add_analysis_metadata(analysis_metadata[status_entry]["analysis_id"], 
-                                              status_entry, 
-                                              analysis_metadata[status_entry]["value"], 
-                                              update=False)
 
 
 def task_fail_slack_alert(context):
