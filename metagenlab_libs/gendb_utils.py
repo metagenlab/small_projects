@@ -105,11 +105,11 @@ class DB:
             fastq_filter += f' and analysis_id in ({filter_str})'
         else:
             analysis_filter = ''
-        sql = f'''select analysis_id,fastq_id,value from  GEN_fastqfilesmetadata t1
+        sql = f'''select analysis_id,t2.name,fastq_id,value from  GEN_fastqfilesmetadata t1
                   inner join GEN_term t2 on t1.term_id=t2.id
                   where t2.name="{metric_name}" {fastq_filter}       
                   union
-                  select NULL as analysis_id, t3.fastq_id,t1.value from  GEN_samplemetadata t1
+                  select NULL as analysis_id, t2.name, t3.fastq_id,t1.value from  GEN_samplemetadata t1
                   inner join GEN_term t2 on t1.term_id=t2.id
                   inner join GEN_fastqtosample t3 on t1.sample_id=t3.sample_id
                   where t2.name="{metric_name}" {sample_filter}
