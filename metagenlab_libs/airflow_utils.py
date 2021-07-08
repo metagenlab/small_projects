@@ -53,7 +53,9 @@ def make_run_dir(execution_folder,
 def backup_output_files_samples(metadata_name2path_template, 
                                 fastq_list,
                                 analysis_name,
-                                pipeline_version):
+                                analysis_id,
+                                backup_folder):
+    
     GEN_DB = gendb_utils.DB()
     
     fastq_df = GEN_DB.get_fastq_and_sample_data(fastq_list)   
@@ -62,31 +64,57 @@ def backup_output_files_samples(metadata_name2path_template,
     for metadata_name in metadata_name2path_template:
         path_template = metadata_name2path_template[metadata_name]
         for n, sample in fastq_df.iterrows():
+
             sample_name = f'{sample["sample_name"]}_{sample["fastq_id"]}'
-            path = path_template.format(analysis_name=analysis_name,sample=sample_name) 
+            
+            # assume structure: {workflow}/{analysis_name}/{filepath}
+            backup_path_format_relative = path_template.format(analysis_name=analysis_name,sample=sample_name)
+            backup_path_format_absolute = os.path.join(backup_folder, '/'.join(backup_path_format_relative.split("/")[1:]))
+            
+            print("backup_path_format", backup_path_format_relative)
+            if not os.path.exists(backup_path_format_absolute):
+                print(f"WARNING: {backup_path_format_absolute} does not exit, skipping" )
+                continue
 
             qc_data.append({"fastq_id": sample["fastq_id"],
                             "metrics_name": metadata_name,
-                            "metrics_value": path,
-                            "pipeline_version": pipeline_version})
-    return qc_data
+                            "metrics_value": backup_path_format_relative,
+                            "pipeline_version": ""})
+    for qc in qc_data:
+        GEN_DB.add_fastq_metadata(fastq_id=qc["fastq_id"],
+                                  term_name=qc["metrics_name"],
+                                  value=qc["metrics_value"],
+                                  analysis_id=analysis_id)
+    
 
 
 def backup_output_files_analysis(metadata_name2path_template, 
                                  analysis_name,
                                  analysis_id,
-                                 pipeline_version):
+                                 backup_folder,
+                                 save_backup_folder=True):
     
-    # save pipeline version
-    gendb_utils.add_analysis_metadata(analysis_id, 
-                                      "snakemake_pipeline_version", 
-                                      pipeline_version, 
-                                      update=True)
+    print("backup_folder", backup_folder)
 
     for metadata in metadata_name2path_template:
+        
+        # assume structure: {workflow}/{analysis_name}/{filepath}
+        path_template_format_relative = metadata_name2path_template[metadata].format(analysis_name=analysis_name)
+        path_template_format_absolute = os.path.join(backup_folder, '/'.join(path_template_format_relative.split("/")[1:]))
+        
+        print("backup_path_format", path_template_format_absolute)
+        if not os.path.exists(path_template_format_absolute):
+            print(f"WARNING: {path_template_format_absolute} does not exit, skipping" )
+            continue
+        
         gendb_utils.add_analysis_metadata(analysis_id, 
                                           metadata, 
-                                          metadata_name2path_template[metadata].format(analysis_name=analysis_name), 
+                                          path_template_format_relative, 
+                                          update=True)
+    if save_backup_folder:
+        gendb_utils.add_analysis_metadata(analysis_id, 
+                                          "backup_folder", 
+                                          backup_folder.split("/")[-2] + f'/{analysis_name}', 
                                           update=True)
 
 def write_sample_file(gen_db_path,
@@ -135,7 +163,6 @@ def write_snakemake_config_file(analysis_name,
                                 gen_db_path,
                                 analysis_id,
                                 reference_list=False,
-                                scientific_name=False,
                                 check_single_species=False,
                                 reference_docx=False,
                                 additional_args=False):
@@ -148,7 +175,7 @@ def write_snakemake_config_file(analysis_name,
     run_execution_folder = os.path.join(execution_folder, analysis_name)
     
     species_list = list(set(GEN_DB.get_fastq_id2species(fastq_list.split(",")).values()))
-
+    print("species_list", species_list)
     if check_single_species:
         if len(species_list) > 1:
             raise IOError("More than one different species in the dataset: %s" % ','.join(species_list))
@@ -160,6 +187,7 @@ def write_snakemake_config_file(analysis_name,
     else:
         scientific_name = 'Mixed'
     
+    print("reference list:", reference_list)
     # if references, prepare list
     if reference_list:
         reference_fastq_list = reference_list.split(",")
@@ -173,7 +201,8 @@ def write_snakemake_config_file(analysis_name,
             ref_list.append(sample_name)
         if 'cgMLST' in reference_fastq_list:
             ref_list.append("cgMLST")
-    
+    print("ref list", ref_list)
+    print("additional_args", additional_args)
     with open(os.path.join(run_execution_folder, f'{analysis_name}.config'), 'w') as f:
         # update sample table name
         snakemake_config["local_samples"] = f'{analysis_name}.tsv'
@@ -193,7 +222,11 @@ def backup(execution_folder,
            backup_folder,
            file_or_folder_list,
            analysis_id=False,
-           analysis_name=False):
+           analysis_name=False,
+           fastq_list=False,
+           output_selection=False,
+           config=False,
+           workflow_name=False):
     
     '''
     Analysis name: folder within execution_folder (generally execution date)
@@ -209,12 +242,13 @@ def backup(execution_folder,
         print("analysis_id", analysis_id)
         gendb_utils.add_analysis_metadata(analysis_id, "airflow_execution_status", "running", update=True)
 
-    
+    # copy files and folders to backup directory
     for output in file_or_folder_list:
         
         if isinstance(output, list):
-            target_dir = os.path.join(backup_folder, output[1])
-            file_list = glob.glob(os.path.join(execution_folder, output[0]))
+            # copy files to specified target directory
+            target_dir = os.path.join(backup_folder,analysis_name, output[1])
+            file_list = glob.glob(os.path.join(execution_folder, analysis_name, output[0]))
             print("file_list", file_list)
             if not os.path.exists(target_dir):
                 os.mkdir(target_dir)
@@ -222,10 +256,35 @@ def backup(execution_folder,
                 print("original", one_file)
                 print("target_dir", target_dir)
                 shutil.copy(one_file, target_dir)
+        elif isinstance(output, dict):
+            import re
+            GEN_DB = gendb_utils.DB()
+            # {glob: samples/*/mapping/bwa/*_assembled_genome.bam, regex: .*/samples/(.*)/mapping/bwa/(.*)_assembled_genome.bam, vars: {1: 'sample', 2: 'reference'}, target: "mapping/{sample}-vs-{reference}.bam", term: bam_file}
+            file_list = glob.glob(os.path.join(execution_folder, analysis_name, output["glob"]))
+            print("glob file list:", file_list)
+            for one_file in file_list:
+                s = re.search(output["regex"], one_file)
+                term2value = {output["vars"][index]:s.group(index) for index in output["vars"]}
+                term2value.update({'analysis_name': analysis_name})
+                target_format = output["target"].format_map(term2value)
+                target_path_full = os.path.join(backup_folder, '/'.join(target_format.split("/")[1:]))
+                # copy file to target location
+                if not os.path.exists(os.path.dirname(target_path_full)):
+                    os.makedirs(os.path.dirname(target_path_full))
+                print("cp:", one_file, target_path_full)
+                shutil.copy(one_file, target_path_full)
+                # save path in db
+                if "term" in output:
+                    fastq_id = term2value["sample"].split("_")[-1]
+                    GEN_DB.add_fastq_metadata(fastq_id=fastq_id,
+                                            term_name=output["term"],
+                                            value=target_format,
+                                            analysis_id=analysis_id)
         else:
+            # copy identical path
             output = output.format(analysis_name=analysis_name)
-            original = os.path.join(execution_folder, output)
-            target = os.path.join(backup_folder, output)
+            original = os.path.join(execution_folder, analysis_name, output)
+            target = os.path.join(backup_folder, analysis_name, output)
             print("original", original)
             print("target", target)
             if os.path.isdir(original):
@@ -237,6 +296,35 @@ def backup(execution_folder,
                 shutil.rmtree(target, ignore_errors=True)
                 shutil.copy(original, target)
     
+    
+    # save file paths into database
+    # can be either nested dictionnaries or a single dictionnary
+    if analysis_name:
+        if output_selection:
+            output_selection = output_selection.split(",")
+            metadata_lst = [value for key, value in config["WORKFLOW"][workflow_name]["PIPELINE_OUTPUT"]["ANALYSIS"].items() if key in output_selection]
+            analysis_metadata_name2template = {k: v for d in metadata_lst for k, v in d.items()}
+            
+            if fastq_list:
+                metadata_lst = [value for key, value in config["WORKFLOW"][workflow_name]["PIPELINE_OUTPUT"]["INDIVIDUAL_SAMPLES"].items() if key in output_selection]
+                sample_metadata_name2template = {k: v for d in metadata_lst for k, v in d.items()}
+        else:
+            analysis_metadata_name2template = config["WORKFLOW"][workflow_name]["PIPELINE_OUTPUT"]["ANALYSIS"]
+            if fastq_list:
+                sample_metadata_name2template = config["WORKFLOW"][workflow_name]["PIPELINE_OUTPUT"]["INDIVIDUAL_SAMPLES"]
+        print("backup path analysis", analysis_metadata_name2template)
+        backup_output_files_analysis(analysis_metadata_name2template, 
+                                    analysis_name,
+                                    analysis_id,
+                                    backup_folder)
+        if fastq_list:
+            fastq_list = fastq_list.split(",")
+            backup_output_files_samples(sample_metadata_name2template, 
+                                                fastq_list,
+                                                analysis_name,
+                                                analysis_id,
+                                                backup_folder)
+
 
 
 def task_fail_slack_alert(context):
