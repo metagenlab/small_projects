@@ -255,7 +255,7 @@ class DB:
             res_filter_sample += f' and t6.analysis_id not in ({metadata_filter})' 
         
         sql_fastq = f'''
-            select distinct t1.fastq_id, t2.name,t1.value, run_name from GEN_fastqfilesmetadata t1 
+            select distinct t1.fastq_id, t2.name,t1.value,run_name from GEN_fastqfilesmetadata t1 
             inner join GEN_term t2 on t1.term_id=t2.id 
             inner join GEN_fastqfiles t3 on t1.fastq_id=t3.id 
             inner join GEN_runs t4 on t3.run_id=t4.id 
