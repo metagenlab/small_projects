@@ -8,10 +8,60 @@ from airflow.hooks.base_hook import BaseHook
 from airflow.providers.slack.operators.slack_webhook import SlackWebhookOperator
 import string 
 import random
-    
+import gzip
+import shutil
+  
 SLACK_CONN_ID = 'slack'
 
-def clean_species(species_string):
+def compress(input, output):
+    with open(input, 'rb') as f_in:
+        if not output.endswith(".gz"):
+            output += '.gz'
+        with gzip.open(output, 'wb') as f_out:
+            shutil.copyfileobj(f_in, f_out)
+            
+def list_dir(root_dir):
+    file_set = set()
+    for dir_, _, files in os.walk(root_dir):
+        for file_name in files:
+            rel_dir = os.path.relpath(dir_, root_dir)
+            rel_file = os.path.join(rel_dir, file_name)
+            file_set.add(rel_file)
+    return file_set
+
+def copy_and_compress(source, target, compress_ext):
+    '''
+    Input:
+    - source directory and target directory 
+    - source filename and target filename
+    (no mix of file and directory)
+    '''
+    if os.path.isdir(source):
+        # list of relative path
+        complete_file_lst = list_dir(source)
+        for filename in complete_file_lst:
+            # if directory does not exist, create it
+            source_abs_path = os.path.join(source, filename)
+            target_abs_path = os.path.join(target, filename)
+            if not os.path.exists(os.path.dirname(target_abs_path)):
+                os.makedirs(os.path.dirname(target_abs_path))
+            # check extension
+            extension = filename.split(".")[-1]
+            if extension in compress_ext:
+                compress(source_abs_path, target_abs_path)
+            else:
+                shutil.copy(source_abs_path, target_abs_path)
+    else:
+        if not os.path.exists(os.path.dirname(target)):
+            os.makedirs(os.path.dirname(target))
+        extension = source.split(".")[-1]
+        if extension in compress_ext:
+            compress(source, target)
+        else:
+            shutil.copy(source, target)
+
+
+def clean_species(species_strings):s
     import re 
     # case when fastq file could not be matched to sample table
     if species_string is None:
@@ -190,17 +240,16 @@ def write_snakemake_config_file(analysis_name,
     print("reference list:", reference_list)
     # if references, prepare list
     if reference_list:
-        reference_fastq_list = reference_list.split(",")
-        fastq_df = GEN_DB.get_fastq_and_sample_data(reference_fastq_list)
-        
-        ref_list = []
-        for n, row in fastq_df.iterrows():
-            fastq_id = row["fastq_id"]
-            
-            sample_name = f'{row["sample_name"]}_{fastq_id}'
-            ref_list.append(sample_name)
-        if 'cgMLST' in reference_fastq_list:
+        reference_list = reference_list.split(",")
+        fastq_df = GEN_DB.get_fastq_and_sample_data(reference_list)
+        # check if external ref
+        ref_list = [ref for ref in reference_list if ref not in fastq_df["fastq_id"].to_list()]
+        if len(ref_list) != 0:
+            print(f"WARNING: extrenal reference genome -- {ref_list[0]} ")
+        ref_list += [f'{row["sample_name"]}_{row["fastq_id"]}' for n, row in fastq_df.iterrows()]
+        if 'cgMLST' in reference_list:
             ref_list.append("cgMLST")
+        
     print("ref list", ref_list)
     print("additional_args", additional_args)
     with open(os.path.join(run_execution_folder, f'{analysis_name}.config'), 'w') as f:
@@ -226,7 +275,8 @@ def backup(execution_folder,
            fastq_list=False,
            output_selection=False,
            config=False,
-           workflow_name=False):
+           workflow_name=False,
+           compress_ext=["fna", "faa", "gbk", "gbff", "vcf", "tsv", "csv", "gff"]):
     
     '''
     Analysis name: folder within execution_folder (generally execution date)
@@ -250,12 +300,13 @@ def backup(execution_folder,
             target_dir = os.path.join(backup_folder,analysis_name, output[1])
             file_list = glob.glob(os.path.join(execution_folder, analysis_name, output[0]))
             print("file_list", file_list)
-            if not os.path.exists(target_dir):
-                os.mkdir(target_dir)
+
             for one_file in file_list:
                 print("original", one_file)
-                print("target_dir", target_dir)
-                shutil.copy(one_file, target_dir)
+                target_abs_path = os.path.join(target_dir, one_file)
+                print("target", target_abs_path)
+                copy_and_compress(original, target_abs_path, compress_ext)
+                
         elif isinstance(output, dict):
             import re
             GEN_DB = gendb_utils.DB()
@@ -272,7 +323,7 @@ def backup(execution_folder,
                 if not os.path.exists(os.path.dirname(target_path_full)):
                     os.makedirs(os.path.dirname(target_path_full))
                 print("cp:", one_file, target_path_full)
-                shutil.copy(one_file, target_path_full)
+                copy_and_compress(one_file, target_path_full, compress_ext)
                 # save path in db
                 if "term" in output:
                     fastq_id = term2value["sample"].split("_")[-1]
@@ -287,16 +338,9 @@ def backup(execution_folder,
             target = os.path.join(backup_folder, analysis_name, output)
             print("original", original)
             print("target", target)
-            if os.path.isdir(original):
-                shutil.rmtree(target, ignore_errors=True)
-                shutil.copytree(original, target)
-            if os.path.isfile(original): 
-                if os.path.exists(target):
-                    os.remove(target)
-                shutil.rmtree(target, ignore_errors=True)
-                shutil.copy(original, target)
-    
-    
+            # copy and compress what can be compressed
+            copy_and_compress(original, target, compress_ext)
+
     # save file paths into database
     # can be either nested dictionnaries or a single dictionnary
     if analysis_name:
@@ -314,16 +358,16 @@ def backup(execution_folder,
                 sample_metadata_name2template = config["WORKFLOW"][workflow_name]["PIPELINE_OUTPUT"]["INDIVIDUAL_SAMPLES"]
         print("backup path analysis", analysis_metadata_name2template)
         backup_output_files_analysis(analysis_metadata_name2template, 
-                                    analysis_name,
-                                    analysis_id,
-                                    backup_folder)
+                                     analysis_name,
+                                     analysis_id,
+                                     backup_folder)
         if fastq_list:
             fastq_list = fastq_list.split(",")
             backup_output_files_samples(sample_metadata_name2template, 
-                                                fastq_list,
-                                                analysis_name,
-                                                analysis_id,
-                                                backup_folder)
+                                        fastq_list,
+                                        analysis_name,
+                                        analysis_id,
+                                        backup_folder)
 
 
 
