@@ -442,7 +442,10 @@ class DB:
         self.server.adaptor.execute(sql)
         sql = (
             "CREATE INDEX pfam_hits_idx ON pfam_hits(hsh);"
-            "CREATE INDEX pfam_hits_pfam ON pfam_hits(pfam_id)"
+        )
+        self.server.adaptor.execute(sql)
+        sql = (
+            "CREATE INDEX pfam_hits_pfam ON pfam_hits(pfam_id);"
         )
         self.server.adaptor.execute(sql)
 
@@ -1719,16 +1722,30 @@ class DB:
         return hsh_results
 
 
-    def get_pfam_def(self, pfam_ids):
+    def get_pfam_def(self, pfam_ids, add_ttl_count=False):
         plcd = self.gen_placeholder_string(pfam_ids)
 
+        ttl_cnt, ttl_join, ttl_grp = "", "", ""
+        if add_ttl_count:
+            ttl_cnt = ", COUNT(*) "
+            ttl_join = (
+                " INNER JOIN pfam_hits AS hits ON hits.pfam_id=pfam_defs.pfam_id "
+                "INNER JOIN sequence_hash_dictionnary AS hsh ON hsh.hsh=hits.hsh "
+            )
+            ttl_grp = "GROUP BY pfam_defs.pfam_id"
+
         query = (
-            "SELECT pfam_id, definition "
-            "FROM pfam_table "
-            f"WHERE pfam_id IN ({plcd});"
+            f"SELECT pfam_defs.pfam_id, pfam_defs.definition {ttl_cnt} "
+            f"FROM pfam_table AS pfam_defs {ttl_join} "
+            f"WHERE pfam_defs.pfam_id IN ({plcd}) "
+            f"{ttl_grp};"
         )
         results = self.server.adaptor.execute_and_fetchall(query, pfam_ids)
-        return DB.to_pandas_frame(results, ["pfam", "def"]).set_index(["pfam"])
+
+        cols = ["pfam", "def"]
+        if add_ttl_count:
+            cols.append("ttl_cnt")
+        return DB.to_pandas_frame(results, cols).set_index(["pfam"])
 
 
     def gen_pfam_where_clause(self, search_on, entries):
