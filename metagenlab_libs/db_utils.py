@@ -152,6 +152,38 @@ class DB:
             tab.append(record)
         return tab
 
+
+    def create_swissprot_tables(self):
+        query = (
+            "CREATE TABLE swissprot_hits ("
+            " hsh INT, prot_id INT, evalue INT, score INT, perc_id INT, gaps INT, leng INT"
+            ");"
+        )
+        self.server.adaptor.execute(query,)
+        query = (
+            "CREATE INDEX sphi ON swissprot_hits(hsh);"
+        )
+        self.server.adaptor.execute(query,)
+        query = (
+            "CREATE TABLE swissprot_defs ("
+            " prot_id INT, swissprot_id TEXT, definition TEXT, taxid INT, organism TEXT, gene TEXT, pe INT"
+            ");"
+        )
+        self.server.adaptor.execute(query,)
+        query = (
+            "CREATE INDEX spdi ON swissprot_defs(prot_id);"
+        )
+        self.server.adaptor.execute(query,)
+
+
+    def load_swissprot_hits(self, data):
+        self.load_data_into_table("swissprot_hits", data)
+
+
+    def load_swissprot_defs(self, data):
+        self.load_data_into_table("swissprot_defs", data)
+
+
     def create_diamond_refseq_match_id(self):
         query = (
             "CREATE TABLE diamond_refseq_match_id ( "
