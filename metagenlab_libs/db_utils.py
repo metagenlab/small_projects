@@ -153,6 +153,49 @@ class DB:
         return tab
 
 
+    def get_n_swissprot_homologs(self, seqid):
+        query = (
+            "SELECT COUNT(*) "
+            "FROM sequence_hash_dictionnary AS hsh "
+            "INNER JOIN swissprot_hits AS hits ON hits.hsh=hsh.hsh "
+            f"WHERE hsh.seqid =?;"
+        )
+        return self.server.adaptor.execute_and_fetchall(query, [seqid])[0][0]
+
+
+    def get_swissprot_homologs(self, seqids, indexing=None):
+        """
+        If indexing is accession: only returns the accession and definition of the
+         swissprot hits.
+        """
+
+        plcder = self.gen_placeholder_string(seqids)
+        sel = (
+            "hsh.seqid, defs.swissprot_id, defs.definition, "
+            " defs.taxid, defs.organism, defs.gene, hits.evalue, hits.score, "
+            "    hits.perc_id, hits.leng, hits.gaps, defs.pe "
+        )
+        cols = ["seqid", "accession", "definition", "taxid", "organism", "gene",
+                "evalue", "bitscore", "perc_id", "match_len", "gaps", "pe"]
+        groupby = ""
+
+        if indexing=="accession":
+            sel = "defs.swissprot_id, defs.definition "
+            groupby = "GROUP BY defs.swissprot_id "
+            cols = ["accession", "definition"]
+
+        query = (
+            f"SELECT {sel}"
+            "FROM sequence_hash_dictionnary AS hsh "
+            "INNER JOIN swissprot_hits AS hits ON hits.hsh=hsh.hsh "
+            "INNER JOIN swissprot_defs AS defs ON defs.prot_id=hits.prot_id "
+            f"WHERE hsh.seqid IN ({plcder}) {groupby};"
+        )
+        args = seqids
+        results = self.server.adaptor.execute_and_fetchall(query, args)
+        return DB.to_pandas_frame(results, cols)
+
+
     def create_swissprot_tables(self):
         query = (
             "CREATE TABLE swissprot_hits ("
@@ -1849,8 +1892,10 @@ class DB:
 
             if not plasmids is None:
                 return df.unstack(level=0, fill_value=0)
-            else:
+            elif not df.empty:
                 df.columns = [col for col in df["count"].columns.values]
+            else:
+                return df
         elif indexing=="seqid":
             if not plasmids is None:
                 raise RuntimeError("Not implemented for now")
