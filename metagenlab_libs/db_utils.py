@@ -1133,7 +1133,7 @@ class DB:
             "SELECT * "
             "FROM bioentry_qualifier_value AS has_plasmid "
             "INNER JOIN term AS pls_term ON pls_term.term_id=has_plasmid.term_id "
-            " AND pls_term.name=\"plasmid\" " 
+            " AND pls_term.name=\"plasmid\" AND has_plasmid.value=1 " 
             "INNER JOIN bioentry AS plasmid ON has_plasmid.bioentry_id=plasmid.bioentry_id "
             "WHERE plasmid.taxon_id=entry.taxon_id"
         )
@@ -1906,7 +1906,7 @@ class DB:
             else:
                 results = ((seqid, pfam) for seqid, pfam, count in results)
             df = DB.to_pandas_frame(results, header)
-            df = df.set_index(["seqid"])
+            # NOTE: do not index on seqid a protein can have several domains!
         return df
 
 
